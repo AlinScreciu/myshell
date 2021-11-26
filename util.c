@@ -1,4 +1,3 @@
-
 #include "util.h"
 void envset(char** env, char* name, char* value)
 {
@@ -68,6 +67,7 @@ void parse_args(char *line, char *args[], int argc)
     int i = 0;
     while (token != NULL)
     {
+        remove_whitespace(token);
         args[i] = malloc(strlen(token) + 1);
         strcpy(args[i], token);
         i++;
@@ -79,13 +79,12 @@ void parse_pipe(char *line, char *args[], int argc)
 {
     char line_copy2[strlen(line) + 1];
     strcpy(line_copy2, line);
-    args[argc] = malloc(sizeof(char));
-    args[argc] = NULL;
-
+    
     char *token = strtok(line_copy2, "|");
     int i = 0;
     while (token != NULL)
     {
+        remove_whitespace(token);
         args[i] = malloc(strlen(token) + 1);
         strcpy(args[i], token);
         i++;

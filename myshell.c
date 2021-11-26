@@ -18,7 +18,7 @@
 #define magenta "\033[35m"
 #define cyan "\033[36m"
 #define reset "\033[0m"
-#define ARG_MAX 131072/4
+#define ARG_MAX 131072 / 4
 #include "util.c"
 char *built_in_commands[] = {"hist", "cd", "env"};
 int nr_of_built_in_commands = 3;
@@ -62,7 +62,7 @@ if (strcmp(line, "cwd") == 0)
                     ;
             }
 */
-bool check_origin( char *line_to_copy)
+bool check_origin(char *line_to_copy)
 {
     char *line = malloc(sizeof(char) * strlen(line_to_copy) + 1);
     strcpy(line, line_to_copy);
@@ -83,9 +83,9 @@ bool check_mine(char *line_to_copy)
     char *line = malloc(sizeof(char) * strlen(line_to_copy) + 1);
     strcpy(line, line_to_copy);
     char *command = strtok(line, " ");
-    for (int i = 0; i < nr_of_built_in_commands; i++)
+    for (int i = 0; i < nr_of_my_commands; i++)
     {
-        if (strcmp(command, built_in_commands[i]) == 0)
+        if (strcmp(command, my_commands[i]) == 0)
             mine = true;
     }
 
@@ -98,7 +98,6 @@ pipeline(char ***cmd)
     int fd[2];
     pid_t pid;
     int fdd = 0; /* Backup */
-
     while (*cmd != NULL)
     {
         pipe(fd); /* Sharing bidiflow */
@@ -127,23 +126,31 @@ pipeline(char ***cmd)
         }
     }
 }
+/*{
+    // "ls -a -e" "cd -e -b"
+    {   {ls},{-a},{-e}, NULL    }, // ls + args end with null
+    {   {cd},{-e},{-b}, NULL    }, // cat + args end with null
+    NULL // cmd parsed + null
+}*/
 char ***make_cmd_arr(char *line)
 {
-
     int cmdc = count_args(line, "|");
-
+    
     char ***parsed_cmd_and_args = malloc(sizeof(char **) * (cmdc + 1));
-    char *parsed_cmd[cmdc + 1];
-    // "ls -a","cat -e"
+    char *parsed_cmd[cmdc];
+    // {{"ls -a"},{"cat -e"}}
     //
     parse_pipe(line, parsed_cmd, cmdc);
 
     for (int i = 0; i < cmdc; i++)
     {
         int argc = count_args(parsed_cmd[i], " ");
-        char *args[argc + 1]; 
+        printf("%d",argc);
+        char *args[argc + 1];
         parsed_cmd_and_args[i] = malloc(argc * ARG_MAX);
+        printf("%s \n",parsed_cmd[i]);
         parse_args(parsed_cmd[i], args, argc);
+        printf("%s \n",args[i]);
         memcpy(parsed_cmd_and_args[i], args, (argc + 1) * (sizeof(char *)));
     }
 
@@ -159,7 +166,6 @@ int exec_no_pr(char *line, bool mine, char *cwd, char *home, char **env)
 
     pid_t pid;
     int status;
-
     if ((pid = fork()) < 0)
     {
         printf("*** ERROR: forking child process failed\n");
@@ -167,24 +173,34 @@ int exec_no_pr(char *line, bool mine, char *cwd, char *home, char **env)
     }
     else if (pid == 0)
     {
-        
+
         // execv("cmds/bin/cd" {"cd"}) //
         if (!mine)
-            if (execvpe(*args, args,env) < 0)
+            if (execvpe(*args, args, env) < 0)
             {
                 printf("Execution failed or the command doesn't exist on this system!\n");
                 exit(1);
             }
             else
             {
-                char *path = (char *)malloc(sizeof(char) * PATH_MAX + 1);
-                sprintf(path, "%s/myshell/commands/bin/%s", home, args[0]);
-                if (execve(path, args, env) < 0)
-                {
-                    printf("Execution failed or the command doesn't exist on this system!\n");
-                    exit(1);
-                }
+                while (wait(&status) != pid)
+                    ;
             }
+        else
+        {
+            char *path = (char *)malloc(sizeof(char) * PATH_MAX + 1);
+            sprintf(path, "%s/myshell/commands/bin/%s",home,args[0]);
+            if (execve(path, args, env) < 0)
+            {
+                printf("Execution failed or the command doesn't exist on this system!\n");
+                exit(1);
+            }
+            else
+            {
+                while (wait(&status) != pid)
+                    ;
+            }
+        }
     }
     else
     {
@@ -193,6 +209,7 @@ int exec_no_pr(char *line, bool mine, char *cwd, char *home, char **env)
     }
     return status;
 }
+
 int exec_pipe(char *line, bool mine, char *cwd, char *home, char **env)
 {
     char ***commands = make_cmd_arr(line);
@@ -304,6 +321,7 @@ int main(int argc, char **argv, char **envp)
     {
 
         sprintf(prompt, green "%s" red "@" cyan "%s" reset ":" magenta "%s" green "$ " reset, user_name, host_name, cwd);
+        
         char *line = readline(prompt);
 
         if (!line)
