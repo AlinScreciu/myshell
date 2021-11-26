@@ -131,13 +131,17 @@ char ***make_cmd_arr(char *line)
 {
 
     int cmdc = count_args(line, "|");
+
     char ***parsed_cmd_and_args = malloc(sizeof(char **) * (cmdc + 1));
     char *parsed_cmd[cmdc + 1];
+    // "ls -a","cat -e"
+    //
     parse_pipe(line, parsed_cmd, cmdc);
+
     for (int i = 0; i < cmdc; i++)
     {
         int argc = count_args(parsed_cmd[i], " ");
-        char *args[argc + 1];
+        char *args[argc + 1]; 
         parsed_cmd_and_args[i] = malloc(argc * ARG_MAX);
         parse_args(parsed_cmd[i], args, argc);
         memcpy(parsed_cmd_and_args[i], args, (argc + 1) * (sizeof(char *)));
