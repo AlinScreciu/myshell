@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
@@ -17,10 +18,13 @@
 #define magenta "\033[35m"
 #define cyan "\033[36m"
 #define reset "\033[0m"
-#define ARG_MAX 131072
+#define ARG_MAX 131072/4
 #include "util.c"
-char *internal_commands[] = {"hist", "cd", "cwd", "env"};
-int nr_of_internal_commands = 3;
+char *built_in_commands[] = {"hist", "cd", "env"};
+int nr_of_built_in_commands = 3;
+
+char *my_commands[] = {"cwd"};
+int nr_of_my_commands = 1;
 /*
 register HIST_ENTRY **temp;
             register int i;
@@ -58,6 +62,36 @@ if (strcmp(line, "cwd") == 0)
                     ;
             }
 */
+bool check_origin( char *line_to_copy)
+{
+    char *line = malloc(sizeof(char) * strlen(line_to_copy) + 1);
+    strcpy(line, line_to_copy);
+    char *command = strtok(line, " ");
+    bool isbuilt_in = false;
+    for (int i = 0; i < nr_of_built_in_commands; i++)
+    {
+        if (strcmp(command, built_in_commands[i]) == 0)
+            isbuilt_in = true;
+    }
+
+    free(command);
+    return isbuilt_in;
+}
+bool check_mine(char *line_to_copy)
+{
+    bool mine = false;
+    char *line = malloc(sizeof(char) * strlen(line_to_copy) + 1);
+    strcpy(line, line_to_copy);
+    char *command = strtok(line, " ");
+    for (int i = 0; i < nr_of_built_in_commands; i++)
+    {
+        if (strcmp(command, built_in_commands[i]) == 0)
+            mine = true;
+    }
+
+    free(command);
+    return mine;
+}
 static void
 pipeline(char ***cmd)
 {
@@ -113,7 +147,7 @@ char ***make_cmd_arr(char *line)
 
     return parsed_cmd_and_args;
 }
-int exec_no_pr(char *line)
+int exec_no_pr(char *line, bool mine, char *cwd, char *home, char **env)
 {
     int cmdargc = count_args(line, " ");
     char *args[cmdargc + 1];
@@ -129,12 +163,24 @@ int exec_no_pr(char *line)
     }
     else if (pid == 0)
     {
+        
         // execv("cmds/bin/cd" {"cd"}) //
-        if (execvp(*args, args) < 0)
-        {
-            printf("Execution failed or the command doesn't exist on this system!\n");
-            exit(1);
-        }
+        if (!mine)
+            if (execvpe(*args, args,env) < 0)
+            {
+                printf("Execution failed or the command doesn't exist on this system!\n");
+                exit(1);
+            }
+            else
+            {
+                char *path = (char *)malloc(sizeof(char) * PATH_MAX + 1);
+                sprintf(path, "%s/myshell/commands/bin/%s", home, args[0]);
+                if (execve(path, args, env) < 0)
+                {
+                    printf("Execution failed or the command doesn't exist on this system!\n");
+                    exit(1);
+                }
+            }
     }
     else
     {
@@ -143,7 +189,7 @@ int exec_no_pr(char *line)
     }
     return status;
 }
-int exec_pipe(char *line)
+int exec_pipe(char *line, bool mine, char *cwd, char *home, char **env)
 {
     char ***commands = make_cmd_arr(line);
     pipeline(commands);
@@ -182,115 +228,64 @@ bool check_redir(char *line)
             else
                 inq = true;
         }
-        if (*line == '|' && !inq)
+        if (*line == '<' && !inq)
             redirf = true;
     }
     return redirf;
 }
-void handle_external(char *line)
+void handle_external(char *line, char *cwd, char *home, char **env)
 {
-
     bool pipeF = check_pipe(line);
     bool redirF = check_redir(line);
-
+    bool mine = check_mine(line);
     // parsing
     if (!(pipeF || redirF))
     {
-        exec_no_pr(line);
+        exec_no_pr(line, mine, cwd, home, env);
     }
     if (pipeF && !redirF)
     {
-        exec_pipe(line);
+        exec_pipe(line, mine, cwd, home, env);
     }
 }
-void handle_internal(char *line, char *cwd, char *home, char** env)
+void handle_built_in(char *line, char *cwd, char *home, char **env)
 {
+    int cmdargc = count_args(line, " ");
 
-        int i = 0;
-        while(*(env+i)!=NULL)
-        {
-            printf("%s\n",*(env+i));
-            i++;
-        }
-        int cmdargc = count_args(line, " ");
+    char *args[cmdargc + 1];
 
-        char *args[cmdargc + 1];
+    parse_args(line, args, cmdargc);
 
-        parse_args(line, args, cmdargc);
-
-        if (strcmp(args[0], "cd") == 0)
-        {
-            int home_len = strlen(home);
-            if (strcmp(cwd,"~") == 0) 
-            {
-                envset(env,"OLDPWD","~");
-            }
-            if (cmdargc == 1)
-                chdir(home);
-            else
-                chdir(args[1]);
-            getcwd(cwd, PATH_MAX);
-
-            if (strncmp(home, cwd, home_len) == 0)
-            {
-                sprintf(cwd, "~%s", cwd + home_len);
-            }
-            envset(env,"PWD",cwd);
-
-            
-            
-        }
-        if (strcmp(args[0],"cwd")==0)
-        {
-            pid_t pid;
-            int status;
-            if ((pid = fork()) < 0)
-            {
-                printf("*** ERROR: forking child process failed\n");
-                exit(1);
-            }
-            else if (pid == 0)
-            {
-                char* path = malloc(sizeof(char)*PATH_MAX+1);
-                sprintf(path,"%s/myshell/commands/bin/cwd",home);
-                if (execle(path,"cwd",NULL,env ) < 0)
-                {
-                    printf("Execution failed or the command doesn't exist on this system!\n");
-                    exit(1);
-                }
-                free(path);
-            }
-            else
-            {
-                while (wait(&status) != pid)
-                    ;
-            }
-        }
-}
-void check_origin(bool *isinternal, char *line_to_copy)
-{
-    char *line = malloc(sizeof(char) * strlen(line_to_copy) + 1);
-    strcpy(line, line_to_copy);
-    char *command = strtok(line, " ");
-    *isinternal = false;
-    for (int i = 0; i < nr_of_internal_commands; i++)
+    if (strcmp(args[0], "cd") == 0)
     {
-        if (strcmp(command, internal_commands[i]) == 0)
-            *isinternal = true;
-    }
+        int home_len = strlen(home);
+        if (strcmp(cwd, "~") == 0)
+        {
+            envset(env, "OLDPWD", "~");
+        }
+        if (cmdargc == 1)
+            chdir(home);
+        else
+            chdir(args[1]);
+        getcwd(cwd, PATH_MAX);
 
-    free(command);
+        if (strncmp(home, cwd, home_len) == 0)
+        {
+            sprintf(cwd, "~%s", cwd + home_len);
+        }
+        envset(env, "PWD", cwd);
+    }
 }
 int main(int argc, char **argv, char **envp)
 {
 
     bool run = true;
-    bool internal = false;
+    bool built_in = false;
     char *user_name = (char *)malloc(sizeof(char) * LOGIN_NAME_MAX);
     char *host_name = (char *)malloc(sizeof(char) * HOST_NAME_MAX);
     cuserid(user_name);
     gethostname(host_name, HOST_NAME_MAX);
-    char** environ = envp;
+    char **environ = envp;
     char cwd[PATH_MAX];
     getcwd(cwd, sizeof(cwd));
     char *home = (char *)malloc(sizeof(char) * (LOGIN_NAME_MAX + 8)); //"/home/username/";
@@ -305,7 +300,6 @@ int main(int argc, char **argv, char **envp)
     {
 
         sprintf(prompt, green "%s" red "@" cyan "%s" reset ":" magenta "%s" green "$ " reset, user_name, host_name, cwd);
-
         char *line = readline(prompt);
 
         if (!line)
@@ -330,16 +324,16 @@ int main(int argc, char **argv, char **envp)
         if (strcmp(line, "") == 0)
             continue;
 
-        check_origin(&internal, line);
+        built_in = check_origin(line);
 
-        if (internal)
+        if (built_in)
         {
-            handle_internal(line, cwd, home, environ);
+            handle_built_in(line, cwd, home, environ);
         }
 
-        if (!internal)
+        if (!built_in)
         {
-            handle_external(line);
+            handle_external(line, cwd, home, environ);
         }
     }
 
