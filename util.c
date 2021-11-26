@@ -1,5 +1,22 @@
 
 #include "util.h"
+void envset(char** env, char* name, char* value)
+{
+    int i = 0;
+    while(*(env+i)!=NULL)
+    {
+        if(strncmp(*(env+i),name,strlen(name))==0)
+        {
+            printf("found value: %s with the name: %s\n",*(env+i),name);
+            printf("replacing\n");
+            *(env + i) = malloc((strlen(value)+1)*sizeof(char));
+            sprintf(*(env+i),"%s=%s",name,value);
+            printf("new value: %s with the name: %s\n",*(env+i),name);
+
+        }
+        i++;
+    }
+}
 void remove_whitespace(char *str)
 {
     //printf("\e[48;5;253m\e[38;5;0m%s\e[0m\n", str);
