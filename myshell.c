@@ -11,8 +11,10 @@
 #include <readline/history.h>
 #include <unistd.h>
 #include <limits.h>
+#include <signal.h>
+#include <setjmp.h>
 #define red "\033[31m"
-#define green "\033[32m"
+#define green "\033[38;5;10m"
 #define yellow "\033[33m"
 #define blue "\033[34m"
 #define magenta "\033[35m"
@@ -20,6 +22,16 @@
 #define reset "\033[0m"
 #define ARG_MAX 131072 / 4
 #include "util.c"
+static sigjmp_buf env;
+static volatile sig_atomic_t jumpable = 0;
+void sigint_handler(int signo)
+{
+    if(!jumpable)
+        return;
+    
+    siglongjmp(env,42);
+
+}
 char *built_in_commands[] = {"hist", "cd", "env"};
 int nr_of_built_in_commands = 3;
 
@@ -93,14 +105,16 @@ bool check_mine(char *line_to_copy)
     return mine;
 }
 static void
-pipeline(char ***cmd)
+pipeline(char ***cmd, char *home, char **env)
 {
     int fd[2];
     pid_t pid;
     int fdd = 0; /* Backup */
+    
     while (*cmd != NULL)
     {
         pipe(fd); /* Sharing bidiflow */
+        bool mine = check_mine(*cmd[0]);
         if ((pid = fork()) == -1)
         {
             perror("fork");
@@ -108,13 +122,35 @@ pipeline(char ***cmd)
         }
         else if (pid == 0)
         {
+            struct sigaction s_child;
+            s_child.sa_handler = sigint_handler;
+            sigemptyset(&s_child.sa_mask);
+            s_child.sa_flags = SA_RESTART;
+            sigaction(SIGINT, &s_child, NULL);
             dup2(fdd, 0);
             if (*(cmd + 1) != NULL)
             {
                 dup2(fd[1], 1);
             }
             close(fd[0]);
-            execvp((*cmd)[0], *cmd);
+            if(!mine)
+            {
+            if (execvpe((*cmd)[0], *cmd, env) < 0)
+            {
+                printf("Execution failed or the command doesn't exist on this system!\n");
+                perror((*cmd)[0]);
+            }
+            }
+            else
+            {
+                char *path = (char *)malloc(sizeof(char) * PATH_MAX + 1);
+                sprintf(path, "%s/myshell/commands/bin/%s",home,(*cmd)[0]);
+                if (execve(path, *cmd, env) < 0)
+            {
+                printf("Execution failed or the command doesn't exist on this system!\n");
+                perror((*cmd)[0]);
+            }
+            }
             exit(1);
         }
         else
@@ -145,13 +181,10 @@ char ***make_cmd_arr(char *line)
     for (int i = 0; i < cmdc; i++)
     {
         int argc = count_args(parsed_cmd[i], " ");
-        printf("%d",argc);
         char *args[argc + 1];
         parsed_cmd_and_args[i] = malloc(argc * ARG_MAX);
-        printf("%s \n",parsed_cmd[i]);
         parse_args(parsed_cmd[i], args, argc);
-        printf("%s \n",args[i]);
-        memcpy(parsed_cmd_and_args[i], args, (argc + 1) * (sizeof(char *)));
+        memcpy(parsed_cmd_and_args[i], args, (argc + 1) * (sizeof(char **)));
     }
 
     parsed_cmd_and_args[cmdc] = NULL;
@@ -166,6 +199,7 @@ int exec_no_pr(char *line, bool mine, char *cwd, char *home, char **env)
 
     pid_t pid;
     int status;
+    
     if ((pid = fork()) < 0)
     {
         printf("*** ERROR: forking child process failed\n");
@@ -175,10 +209,16 @@ int exec_no_pr(char *line, bool mine, char *cwd, char *home, char **env)
     {
 
         // execv("cmds/bin/cd" {"cd"}) //
+        struct sigaction s_child;
+        s_child.sa_handler = sigint_handler;
+        sigemptyset(&s_child.sa_mask);
+        s_child.sa_flags = SA_RESTART;
+        sigaction(SIGINT, &s_child, NULL);
         if (!mine)
             if (execvpe(*args, args, env) < 0)
             {
                 printf("Execution failed or the command doesn't exist on this system!\n");
+                perror(*args);
                 exit(1);
             }
             else
@@ -192,6 +232,7 @@ int exec_no_pr(char *line, bool mine, char *cwd, char *home, char **env)
             sprintf(path, "%s/myshell/commands/bin/%s",home,args[0]);
             if (execve(path, args, env) < 0)
             {
+                perror(path);
                 printf("Execution failed or the command doesn't exist on this system!\n");
                 exit(1);
             }
@@ -210,10 +251,10 @@ int exec_no_pr(char *line, bool mine, char *cwd, char *home, char **env)
     return status;
 }
 
-int exec_pipe(char *line, bool mine, char *cwd, char *home, char **env)
+int exec_pipe(char *line, char *cwd, char *home, char **env)
 {
     char ***commands = make_cmd_arr(line);
-    pipeline(commands);
+    pipeline(commands,home,env);
     free(commands);
 };
 bool check_pipe(char *line)
@@ -266,7 +307,7 @@ void handle_external(char *line, char *cwd, char *home, char **env)
     }
     if (pipeF && !redirF)
     {
-        exec_pipe(line, mine, cwd, home, env);
+        exec_pipe(line, cwd, home, env);
     }
 }
 void handle_built_in(char *line, char *cwd, char *home, char **env)
@@ -287,7 +328,11 @@ void handle_built_in(char *line, char *cwd, char *home, char **env)
         if (cmdargc == 1)
             chdir(home);
         else
-            chdir(args[1]);
+            if (chdir(args[1]) != 0)
+            {
+                //printf("Couldn't find directory %s\n",args[1]);
+                perror("cd");
+            };
         getcwd(cwd, PATH_MAX);
 
         if (strncmp(home, cwd, home_len) == 0)
@@ -299,33 +344,48 @@ void handle_built_in(char *line, char *cwd, char *home, char **env)
 }
 int main(int argc, char **argv, char **envp)
 {
-
+    struct sigaction s;
+    s.sa_handler = sigint_handler;
+    sigemptyset(&s.sa_mask);
+    s.sa_flags = SA_RESTART;
+    sigaction(SIGINT, &s, NULL);
     bool run = true;
     bool built_in = false;
+
     char *user_name = (char *)malloc(sizeof(char) * LOGIN_NAME_MAX);
     char *host_name = (char *)malloc(sizeof(char) * HOST_NAME_MAX);
     cuserid(user_name);
     gethostname(host_name, HOST_NAME_MAX);
+
     char **environ = envp;
+
     char cwd[PATH_MAX];
     getcwd(cwd, sizeof(cwd));
     char *home = (char *)malloc(sizeof(char) * (LOGIN_NAME_MAX + 8)); //"/home/username/";
     sprintf(home, "/home/%s", user_name);
     int home_len = strlen(home);
+
     if (strncmp(home, cwd, home_len) == 0)
     {
         sprintf(cwd, "~%s", cwd + home_len);
     }
+
     char *prompt = (char *)malloc((strlen(user_name) + strlen(host_name) + PATH_MAX + 21) * sizeof(char));
     while (run)
     {
-
+        if (sigsetjmp(env,1) == 42  )
+            {
+                printf("\n");
+                continue;
+            }
+        jumpable = 1;
         sprintf(prompt, green "%s" red "@" cyan "%s" reset ":" magenta "%s" green "$ " reset, user_name, host_name, cwd);
         
         char *line = readline(prompt);
 
         if (!line)
         {
+            printf("\n");
             exit(1);
         }
 
@@ -347,7 +407,6 @@ int main(int argc, char **argv, char **envp)
             continue;
 
         built_in = check_origin(line);
-
         if (built_in)
         {
             handle_built_in(line, cwd, home, environ);
