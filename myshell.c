@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
@@ -17,63 +18,45 @@
 #define green "\033[38;5;10m"
 #define yellow "\033[33m"
 #define blue "\033[34m"
-#define magenta "\033[35m"
+#define magenta "\033[38;5;13m"
 #define cyan "\033[36m"
 #define reset "\033[0m"
-#define ARG_MAX 131072 / 4
 #include "util.c"
 static sigjmp_buf env;
 static volatile sig_atomic_t jumpable = 0;
-void sigint_handler(int signo)
+void help()
 {
-    if(!jumpable)
-        return;
-    
-    siglongjmp(env,42);
-
+    printf(
+        "The implemented commands are:\n"
+        "1. cd\n2. hist\n3. env\n4. cwd\n"
+        );
 }
-char *built_in_commands[] = {"hist", "cd", "env"};
-int nr_of_built_in_commands = 3;
+void sigint_handler()
+{
+    if (!jumpable)
+        return;
 
-char *my_commands[] = {"cwd"};
-int nr_of_my_commands = 1;
-/*
-register HIST_ENTRY **temp;
-            register int i;
-            temp = history_list();
-            if (temp)
-            {
-                for (i = 0; temp[i]; i++)
-                {
-                    printf("%d: %s\n", i + history_base, temp[i]->line);
-                }
-            }
-*/
-/*
-if (strcmp(line, "cwd") == 0)
+    siglongjmp(env, 42);
+}
+char *built_in_commands[] = {"hist", "cd", "env","help"};
+int nr_of_built_in_commands = 4;
+
+char *my_commands[] = {"cwd","more","diff"};
+int nr_of_my_commands = 3;
+
+void hist()
+{
+    register HIST_ENTRY **temp;
+    register int i;
+    temp = history_list();
+    if (temp)
+    {
+        for (i = 0; temp[i]; i++)
         {
-            pid_t pid;
-            int status;
-            if ((pid = fork()) < 0)
-            {
-                printf("*** ERROR: forking child process failed\n");
-                exit(1);
-            }
-            else if (pid == 0)
-            {
-                // execv("cmds/bin/cd" {"cd"}) //
-                if (execl("../commands/bin/cwd", "cwd", NULL) < 0)
-                {
-                    printf("Execution failed or the command doesn't exist on this system!\n");
-                    exit(1);
-                }
-            }
-            else
-            {
-                while (wait(&status) != pid)
-                    ;
-            }
-*/
+            printf("%d: %s\n", i + history_base, temp[i]->line);
+        }
+    }
+}
 bool check_origin(char *line_to_copy)
 {
     char *line = malloc(sizeof(char) * strlen(line_to_copy) + 1);
@@ -104,102 +87,99 @@ bool check_mine(char *line_to_copy)
     free(command);
     return mine;
 }
-static void
-pipeline(char ***cmd, char *home, char **env)
+typedef enum redir_mode{OUT_TRUNC,OUT_APP,IN}
+redir_mode;
+typedef struct 
 {
-    int fd[2];
-    pid_t pid;
-    int fdd = 0; /* Backup */
+    redir_mode mode;
+    int mode_pos;
+}  redir;
+
+redir* init_redir()
+{
+    redir* _redir = malloc(sizeof(redir));
+    _redir->mode = (redir_mode) NULL;
+    _redir->mode_pos = 0;
+    return _redir;
+}
+redir* check_redir(char **argv, int argc)
+{
+    redir* mode = init_redir();
+    // >> > << < 
+    // (cmd 1) <> r) | (cmd 2) <> r) | (cmd 3) <>
     
-    while (*cmd != NULL)
+    for (int i = 0; i < argc; i++)
     {
-        pipe(fd); /* Sharing bidiflow */
-        bool mine = check_mine(*cmd[0]);
-        if ((pid = fork()) == -1)
+        if (strcmp(argv[i], "<") == 0)
         {
-            perror("fork");
-            exit(1);
+            mode->mode=IN;
+            mode->mode_pos = i;
         }
-        else if (pid == 0)
+        if (strcmp(argv[i], ">>") == 0)
         {
-            struct sigaction s_child;
-            s_child.sa_handler = sigint_handler;
-            sigemptyset(&s_child.sa_mask);
-            s_child.sa_flags = SA_RESTART;
-            sigaction(SIGINT, &s_child, NULL);
-            dup2(fdd, 0);
-            if (*(cmd + 1) != NULL)
-            {
-                dup2(fd[1], 1);
-            }
-            close(fd[0]);
-            if(!mine)
-            {
-            if (execvpe((*cmd)[0], *cmd, env) < 0)
-            {
-                printf("Execution failed or the command doesn't exist on this system!\n");
-                perror((*cmd)[0]);
-            }
-            }
-            else
-            {
-                char *path = (char *)malloc(sizeof(char) * PATH_MAX + 1);
-                sprintf(path, "%s/myshell/commands/bin/%s",home,(*cmd)[0]);
-                if (execve(path, *cmd, env) < 0)
-            {
-                printf("Execution failed or the command doesn't exist on this system!\n");
-                perror((*cmd)[0]);
-            }
-            }
-            exit(1);
+            mode->mode=OUT_APP;
+            mode->mode_pos = i;
+
         }
-        else
+        if (strcmp(argv[i], ">") == 0)
         {
-            wait(NULL); /* Collect childs */
-            close(fd[1]);
-            fdd = fd[0];
-            cmd++;
+            mode->mode=OUT_TRUNC;
+            mode->mode_pos = i;
         }
     }
+    return mode;
+
 }
-/*{
-    // "ls -a -e" "cd -e -b"
-    {   {ls},{-a},{-e}, NULL    }, // ls + args end with null
-    {   {cd},{-e},{-b}, NULL    }, // cat + args end with null
-    NULL // cmd parsed + null
-}*/
-char ***make_cmd_arr(char *line)
-{
-    int cmdc = count_args(line, "|");
+int exec_no_p(char *line, bool mine, char *cwd, char *home, char **env){
     
-    char ***parsed_cmd_and_args = malloc(sizeof(char **) * (cmdc + 1));
-    char *parsed_cmd[cmdc];
-    // {{"ls -a"},{"cat -e"}}
-    //
-    parse_pipe(line, parsed_cmd, cmdc);
 
-    for (int i = 0; i < cmdc; i++)
-    {
-        int argc = count_args(parsed_cmd[i], " ");
-        char *args[argc + 1];
-        parsed_cmd_and_args[i] = malloc(argc * ARG_MAX);
-        parse_args(parsed_cmd[i], args, argc);
-        memcpy(parsed_cmd_and_args[i], args, (argc + 1) * (sizeof(char **)));
-    }
-
-    parsed_cmd_and_args[cmdc] = NULL;
-
-    return parsed_cmd_and_args;
-}
-int exec_no_pr(char *line, bool mine, char *cwd, char *home, char **env)
-{
     int cmdargc = count_args(line, " ");
     char *args[cmdargc + 1];
+    redir* mode = init_redir();
     parse_args(line, args, cmdargc);
-
+    mode = check_redir(args, cmdargc);
+    int saved_stdout,saved_stderr,saved_stdin;
+    saved_stderr = dup(STDERR_FILENO);
+    saved_stdout = dup(STDOUT_FILENO);
+    saved_stdin = dup(STDIN_FILENO);    
+    int fd;
     pid_t pid;
     int status;
-    
+    // cmd arg >/>>/</ { file to redir to}
+    // cmd arg NULL file
+    if (mode->mode_pos != 0)
+    {
+        if (mode->mode == OUT_TRUNC)
+        {
+
+            if (args[mode->mode_pos + 1] != NULL)
+            {
+                
+                fd = open(args[mode->mode_pos + 1], O_WRONLY | O_CREAT);
+                fchmod(fd,S_IROTH  | S_IRGRP | S_IRUSR | S_IWUSR );
+                dup2(fd, STDOUT_FILENO);
+                args[mode->mode_pos] = NULL;
+            }
+        }
+        if (mode->mode == OUT_APP)
+        {
+            if (args[mode->mode_pos + 1] != NULL)
+            { 
+                fd = open(args[mode->mode_pos + 1], O_WRONLY | O_APPEND);
+                dup2(fd, STDOUT_FILENO);
+                args[mode->mode_pos] = NULL;
+            }
+        }
+        if (mode->mode == IN)
+        {
+            if (args[mode->mode_pos + 1] != NULL)
+            {
+                fd = open(args[mode->mode_pos + 1], O_RDONLY);
+                dup2(fd, STDIN_FILENO);
+                args[mode->mode_pos] = NULL;
+            }
+        }
+    }
     if ((pid = fork()) < 0)
     {
         printf("*** ERROR: forking child process failed\n");
@@ -214,9 +194,11 @@ int exec_no_pr(char *line, bool mine, char *cwd, char *home, char **env)
         sigemptyset(&s_child.sa_mask);
         s_child.sa_flags = SA_RESTART;
         sigaction(SIGINT, &s_child, NULL);
+        
         if (!mine)
             if (execvpe(*args, args, env) < 0)
             {
+
                 printf("Execution failed or the command doesn't exist on this system!\n");
                 perror(*args);
                 exit(1);
@@ -228,8 +210,9 @@ int exec_no_pr(char *line, bool mine, char *cwd, char *home, char **env)
             }
         else
         {
+            
             char *path = (char *)malloc(sizeof(char) * PATH_MAX + 1);
-            sprintf(path, "%s/myshell/commands/bin/%s",home,args[0]);
+            sprintf(path, "%s/myshell/commands/bin/%s", home, args[0]);
             if (execve(path, args, env) < 0)
             {
                 perror(path);
@@ -248,15 +231,77 @@ int exec_no_pr(char *line, bool mine, char *cwd, char *home, char **env)
         while (wait(&status) != pid)
             ;
     }
+    close(fd);
+    dup2(saved_stdin, STDIN_FILENO);
+    dup2(saved_stdout, STDOUT_FILENO);
+    dup2(saved_stderr, STDERR_FILENO);
+    close(saved_stdout);
+    close(saved_stderr);   
+    close(saved_stdin);
+    
     return status;
 }
 
-int exec_pipe(char *line, char *cwd, char *home, char **env)
+static void
+pipeline(char **cmd, char* cwd,char *home, char **env)
 {
-    char ***commands = make_cmd_arr(line);
-    pipeline(commands,home,env);
+    int fd[2];
+    pid_t pid;
+    int fdd = 0; /* Backup */
+    while (*cmd != NULL)
+    {
+        pipe(fd); /* Sharing bidiflow */
+        bool mine = check_mine(*cmd);
+        if ((pid = fork()) == -1)
+        {
+            perror("fork");
+            exit(1);
+        }
+        else if (pid == 0)
+        {
+            struct sigaction s_child;
+            s_child.sa_handler = sigint_handler;
+            sigemptyset(&s_child.sa_mask);
+            s_child.sa_flags = SA_RESTART;
+            sigaction(SIGINT, &s_child, NULL);
+            dup2(fdd, 0);
+
+            if (*(cmd + 1) != NULL)
+            {
+                dup2(fd[1], 1);
+            }
+            close(fd[0]);
+            exec_no_p(*cmd,mine, cwd, home, env);
+            exit(1);
+        }
+        else
+        {
+            wait(NULL); /* Collect childs */
+            close(fd[1]);
+            fdd = fd[0];
+            cmd++;
+        }
+    }
+    
+}
+char **make_cmd_arr(char *line)
+{
+    int cmdc = count_args(line, "|");
+
+    char **parsed_cmd = malloc(sizeof(char*)*cmdc + 1);
+    parse_pipe(line, parsed_cmd, cmdc);
+
+    parsed_cmd[cmdc] = NULL;
+    return parsed_cmd;
+}
+
+void exec_pipe(char *line, char *cwd, char *home, char **env)
+{
+    char **commands = make_cmd_arr(line);
+    pipeline(commands, cwd, home, env);
     free(commands);
-};
+}
+
 bool check_pipe(char *line)
 {
     bool pipef = false;
@@ -276,39 +321,41 @@ bool check_pipe(char *line)
     }
     return pipef;
 }
-bool check_redir(char *line)
-{
-    bool redirf = false;
-    bool inq = false; // in '' or ""
-
-    while (*line++)
-    {
-        if (*line == '\'' || *line == '"')
-        {
-            if (inq)
-                inq = false;
-            else
-                inq = true;
-        }
-        if (*line == '<' && !inq)
-            redirf = true;
-    }
-    return redirf;
-}
 void handle_external(char *line, char *cwd, char *home, char **env)
 {
     bool pipeF = check_pipe(line);
-    bool redirF = check_redir(line);
     bool mine = check_mine(line);
     // parsing
-    if (!(pipeF || redirF))
+    if (!pipeF)
     {
-        exec_no_pr(line, mine, cwd, home, env);
+        exec_no_p(line, mine, cwd, home, env);
     }
-    if (pipeF && !redirF)
+    if (pipeF)
     {
         exec_pipe(line, cwd, home, env);
     }
+
+}
+void cd(int argc, char **args, char *cwd, char *home, char **env)
+{
+    int home_len = strlen(home);
+    if (strcmp(cwd, "~") == 0)
+    {
+        envset(env, "OLDPWD", "~");
+    }
+    if (argc == 1)
+        chdir(home);
+    else if (chdir(args[1]) != 0)
+    {
+        perror("cd");
+    };
+    getcwd(cwd, PATH_MAX);
+
+    if (strncmp(home, cwd, home_len) == 0)
+    {
+        sprintf(cwd, "~%s", cwd + home_len);
+    }
+    envset(env, "PWD", cwd);
 }
 void handle_built_in(char *line, char *cwd, char *home, char **env)
 {
@@ -320,30 +367,20 @@ void handle_built_in(char *line, char *cwd, char *home, char **env)
 
     if (strcmp(args[0], "cd") == 0)
     {
-        int home_len = strlen(home);
-        if (strcmp(cwd, "~") == 0)
-        {
-            envset(env, "OLDPWD", "~");
-        }
-        if (cmdargc == 1)
-            chdir(home);
-        else
-            if (chdir(args[1]) != 0)
-            {
-                //printf("Couldn't find directory %s\n",args[1]);
-                perror("cd");
-            };
-        getcwd(cwd, PATH_MAX);
-
-        if (strncmp(home, cwd, home_len) == 0)
-        {
-            sprintf(cwd, "~%s", cwd + home_len);
-        }
-        envset(env, "PWD", cwd);
+        cd(cmdargc, args, cwd, home, env);
+    }
+    if( strcmp(args[0], "hist") == 0)
+    {
+        hist();
+    }
+    if( strcmp(args[0], "help") == 0)
+    {
+        help();
     }
 }
 int main(int argc, char **argv, char **envp)
 {
+    setsid();
     struct sigaction s;
     s.sa_handler = sigint_handler;
     sigemptyset(&s.sa_mask);
@@ -373,14 +410,14 @@ int main(int argc, char **argv, char **envp)
     char *prompt = (char *)malloc((strlen(user_name) + strlen(host_name) + PATH_MAX + 21) * sizeof(char));
     while (run)
     {
-        if (sigsetjmp(env,1) == 42  )
-            {
-                printf("\n");
-                continue;
-            }
+        if (sigsetjmp(env, 1) == 42)
+        {
+            printf("\n");
+            continue;
+        }
         jumpable = 1;
-        sprintf(prompt, green "%s" red "@" cyan "%s" reset ":" magenta "%s" green "$ " reset, user_name, host_name, cwd);
-        
+        sprintf(prompt, green "%s@%s" reset ":" magenta "%s" reset "$ ", user_name, host_name, cwd);
+
         char *line = readline(prompt);
 
         if (!line)
@@ -405,7 +442,6 @@ int main(int argc, char **argv, char **envp)
 
         if (strcmp(line, "") == 0)
             continue;
-
         built_in = check_origin(line);
         if (built_in)
         {
