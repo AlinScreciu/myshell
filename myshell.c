@@ -28,7 +28,7 @@ void help()
 {
     printf(
         "The implemented commands are:\n"
-        "1. cd\n2. hist\n3. env\n4. cwd\n"
+        "1. cd\n2. hist\n3. env\n4. cwd\n5. chmod not the same"
         );
 }
 void sigint_handler()
@@ -41,8 +41,8 @@ void sigint_handler()
 char *built_in_commands[] = {"hist", "cd", "env","help"};
 int nr_of_built_in_commands = 4;
 
-char *my_commands[] = {"cwd","more","diff"};
-int nr_of_my_commands = 3;
+char *my_commands[] = {"cwd","more","diff", "chmod"};
+int nr_of_my_commands = 4;
 
 void hist()
 {
@@ -272,7 +272,8 @@ pipeline(char **cmd, char* cwd,char *home, char **env)
             }
             close(fd[0]);
             exec_no_p(*cmd,mine, cwd, home, env);
-            exit(1);
+
+            exit(0);
         }
         else
         {
@@ -427,11 +428,7 @@ int main(int argc, char **argv, char **envp)
         }
 
         // Handle line
-        if (*line)
-        {
-            add_history(line);
-            remove_whitespace(line);
-        }
+        
 
         if (strcmp(line, "exit") == 0)
         {
@@ -442,6 +439,11 @@ int main(int argc, char **argv, char **envp)
 
         if (strcmp(line, "") == 0)
             continue;
+        if (*line)
+        {
+            add_history(line);
+            remove_whitespace(line);
+        }
         built_in = check_origin(line);
         if (built_in)
         {
