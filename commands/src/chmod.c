@@ -16,7 +16,8 @@ typedef struct
     perm *grp_perm;
     perm *oth_perm;
     perm *special_perm;
-    char op;
+    char op, target;
+    bool default_target;
 } mode_handler;
 perm *make_perm(bool r, bool w, bool x)
 {
@@ -60,8 +61,6 @@ perm *parse_perm(char mode)
     }
     return make_perm(r, w, x);
 }
-
-
 mode_handler *make_mode_handler(char *modes, char op)
 {
     mode_handler *handler = (mode_handler *)malloc(sizeof(mode_handler));
@@ -70,32 +69,39 @@ mode_handler *make_mode_handler(char *modes, char op)
     handler->grp_perm = parse_perm(modes[2]);
     handler->oth_perm = parse_perm(modes[3]);
     handler->op = op;
+    handler->target = 'a';
+    handler->default_target = true;
     return handler;
 }
 void perm_sub(perm* left, perm* right)
 {
-    printf("left: %d %d %d\n", left->r, left->w, left->x);
-    printf("right: %d %d %d\n", right->r, right->w, right->x);
+
     left->r = left->r & !right->r;
     left->w = left->w & !right->w;
     left->x = left->x & !right->x;
-    printf("left: %d %d %d\n", left->r, left->w, left->x);
+}
+void perm_add(perm* left, perm* right)
+{
 
+    left->r = left->r | right->r;
+    left->w = left->w | right->w;
+    left->x = left->x | right->x;
 }
 char perm_tochar(perm prm)
 {
-    int ret;
-    int remainder;
+    int iperm=0;
+    if (prm.r) iperm+=4;
+    if (prm.w) iperm+=2;
+    if (prm.x) iperm+=1;
+    return iperm + 48;
 }
-void substract(char* target, mode_handler* handler)
+void op_handler(char* target, mode_handler* handler)
 {
-    
+    char op = handler->op;
     struct stat stbf;
-
     stat(target, &stbf);
-
     char* old_perm = (char*)malloc(sizeof(char)*4 + 1);
-    sprintf(old_perm, "%o", stbf.st_mode  );
+    sprintf(old_perm, "%o", stbf.st_mode  ); 
     old_perm = old_perm + 2;
     printf("old: %s\n",old_perm);
     perm *special, *own, *grp, *oth;
@@ -103,8 +109,26 @@ void substract(char* target, mode_handler* handler)
     own = parse_perm(old_perm[1]);
     grp = parse_perm(old_perm[2]);
     oth = parse_perm(old_perm[3]);
-    perm_sub(special, handler->special_perm);
-    printf("special after sub: %d %d %d\n", special->r, special->w, special->x);
+
+    if (op == '-')
+    {
+        perm_sub(special, handler->special_perm);
+        perm_sub(own, handler->usr_perm);
+        perm_sub(grp, handler->grp_perm);
+        perm_sub(oth, handler->oth_perm);
+    }
+    if (op == '+')
+    {
+        perm_add(special, handler->special_perm);
+        perm_add(own, handler->usr_perm);
+        perm_add(grp, handler->grp_perm);
+        perm_add(oth, handler->oth_perm);
+    }
+
+    char final_perm[] = { perm_tochar(*special), perm_tochar(*own), perm_tochar(*grp), perm_tochar(*oth),'\0'};
+    printf("final: %o\n",(mode_t)strtoul(final_perm, NULL, 8));
+
+    chmod(target, (mode_t)strtoul(final_perm, NULL, 8));
 
 }
 void handle_mode(char *mode, char *path)
@@ -112,32 +136,62 @@ void handle_mode(char *mode, char *path)
     regex_t octal, symbolic;
     bool oct_f = false;
     regcomp(&octal, "^([-+=]*[0-7]+)$", REG_EXTENDED);
-    oct_f = regexec(&octal, mode, 0, NULL, 0);
+                    //  target=a  op=0 (perm)
+                    
+    regcomp(&symbolic, "[ugoa]*([-+=]([rwxXst]*|[ugo]))+", REG_EXTENDED);
+    oct_f = regexec(&octal, mode, 0, NULL, 0); // 0 if valid
 
     if (!oct_f)
     {
-        char op;
+        
+        char op = '=';
         int ops = 0;
-        for (int i = 0; i < strlen(mode); i++)
+        for (size_t i = 0; i < strlen(mode); i++)
             if (!isdigit(mode[i]))
             {
                 ops++;
                 op = mode[i];
             }
-        printf("%d\n",ops);
+        // 
         char *w_mode = malloc(sizeof(char) * strlen(mode+ops) + 2);
         sprintf(w_mode, "%.4lo", strtoul(mode+ops, NULL, 8));
-        printf("%s\n", w_mode);
+        printf("new: %s\n", w_mode);
         mode_handler *handler;
         handler = make_mode_handler(w_mode, op);
-        printf("sp: %d %d %d\n", handler->special_perm->r,handler->special_perm->w,handler->special_perm->x);
-        printf("usr: %d %d %d\n", handler->usr_perm->r,handler->usr_perm->w,handler->usr_perm->x);
-        printf("grp: %d %d %d\n", handler->grp_perm->r,handler->grp_perm->w,handler->grp_perm->x);
-        printf("oth: %d %d %d\n", handler->oth_perm->r,handler->oth_perm->w,handler->oth_perm->x);
 
-        if (op == '-')
-            substract(path,handler);
 
+        if (op != '=')
+            op_handler(path, handler);
+        else
+            chmod(path, (mode_t) (strtoul(mode, NULL,8)));
+
+    }
+    else
+    {
+        if (regexec(&symbolic, mode, 0, NULL, 0) != 0)
+            EXIT_FAILURE;
+        perm *special, *usr, *grp, *oth;
+        char default_target = 'a';
+        char* target = malloc(sizeof(char)*5);
+        char* nparsed_perm = malloc(sizeof(char)*5);
+        char op = '=';
+        struct stat stbf;
+        char *old_perm = malloc(sizeof(char) * 8);
+        stat(path, &stbf);
+        sprintf(old_perm, "%o", stbf.st_mode);
+        old_perm = old_perm + 2;
+        special = parse_perm(old_perm[0]);
+        usr = parse_perm(old_perm[1]);
+        grp = parse_perm(old_perm[2]);
+        oth = parse_perm(old_perm[3]);
+        char final_perm[] = { perm_tochar(*special), perm_tochar(*usr), perm_tochar(*grp), perm_tochar(*oth),'\0'};
+        printf("final: %o\n",(mode_t)strtoul(final_perm, NULL, 8));
+
+
+        printf("to parse: %s\n",mode);
+        target = strtok(strdup(mode),"+=-");
+        nparsed_perm = strtok(NULL, "+=-");
+        printf("target: %s\nperm: %s\n",target,nparsed_perm);
     }
 }
 int main(int argc, char **argv)
@@ -148,15 +202,16 @@ int main(int argc, char **argv)
     char *mode;
     //  (for who)*(op([permission] or [group])) or [op][0-7]+
     // [ugoa]*([-+=]([rwxXst]*|[ugo]))+|[-+=][0-7]+
+    
     regcomp(&regex, "[ugoa]*([-+=]([rwxXst]*|[ugo]))+|[-+=]?[0-7]+", REG_EXTENDED);
-    valid = regexec(&regex, argv[1], 0, NULL, 0);
-    if (valid)
-        return 1;
-
     mode = strdup(argv[1]);
     mode = strtok(mode, ",");
     while (mode != NULL)
     {
+        
+        valid = regexec(&regex, mode, 0, NULL, 0);
+        if (valid)
+            return 1;
         handle_mode(mode, argv[2]);
         mode = strtok(NULL, ",");
     }

@@ -272,7 +272,6 @@ pipeline(char **cmd, char* cwd,char *home, char **env)
             }
             close(fd[0]);
             exec_no_p(*cmd,mine, cwd, home, env);
-
             exit(0);
         }
         else
@@ -346,6 +345,7 @@ void cd(int argc, char **args, char *cwd, char *home, char **env)
     }
     if (argc == 1)
         chdir(home);
+        
     else if (chdir(args[1]) != 0)
     {
         perror("cd");
@@ -389,7 +389,7 @@ int main(int argc, char **argv, char **envp)
     sigaction(SIGINT, &s, NULL);
     bool run = true;
     bool built_in = false;
-
+    
     char *user_name = (char *)malloc(sizeof(char) * LOGIN_NAME_MAX);
     char *host_name = (char *)malloc(sizeof(char) * HOST_NAME_MAX);
     cuserid(user_name);
@@ -397,9 +397,9 @@ int main(int argc, char **argv, char **envp)
 
     char **environ = envp;
 
-    char cwd[PATH_MAX];
-    getcwd(cwd, sizeof(cwd));
-    char *home = (char *)malloc(sizeof(char) * (LOGIN_NAME_MAX + 8)); //"/home/username/";
+    char* cwd;
+    cwd = getcwd(NULL, 0);
+    char *home = (char *)malloc(sizeof(char) * (LOGIN_NAME_MAX + 6) + 1); //"/home/username/";
     sprintf(home, "/home/%s", user_name);
     int home_len = strlen(home);
 
@@ -411,10 +411,9 @@ int main(int argc, char **argv, char **envp)
     char *prompt = (char *)malloc((strlen(user_name) + strlen(host_name) + PATH_MAX + 21) * sizeof(char));
     while (run)
     {
-        if (sigsetjmp(env, 1) == 42)
+       if (sigsetjmp(env, 1) == 42)
         {
-            printf("\n");
-            continue;
+            printf("SIGINT\n");
         }
         jumpable = 1;
         sprintf(prompt, green "%s@%s" reset ":" magenta "%s" reset "$ ", user_name, host_name, cwd);
@@ -455,7 +454,7 @@ int main(int argc, char **argv, char **envp)
             handle_external(line, cwd, home, environ);
         }
     }
-
+     
     // avoid memory leaks
     free(prompt);
     free(host_name);

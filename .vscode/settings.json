@@ -3,6 +3,7 @@
         "limits.h": "c",
         "ctype.h": "c",
         "stat.h": "c",
-        "regex.h": "c"
+        "regex.h": "c",
+        "stdio.h": "c"
     }
 }

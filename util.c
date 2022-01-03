@@ -39,21 +39,14 @@ void remove_whitespace(char *str)
     rw_str[rit + 1] = '\0';
     strcpy(str, rw_str);
 }
-int count_args(char *line, char* delim)
+int count_args(const char *line, char* delim)
 {
-    int count = 0;
-    char line_copy[strlen(line) + 1];
-    strcpy(line_copy, line);
-
-    char *it = strtok(line_copy, delim);
-
-    while (it != NULL)
-    {
-        count++;
-        it = strtok(NULL, delim);
-    }
-    free(it);
-    return count;
+   int argc = 0;
+    if (strtok(strdup(line), delim)!= NULL) argc++;
+        else return 0;
+    while( strtok(NULL, delim) != NULL)
+        argc++;
+    return argc;
 }
 void parse_args(char *line, char *args[], int argc)
 {
