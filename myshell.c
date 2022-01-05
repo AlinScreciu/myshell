@@ -155,7 +155,7 @@ int exec_no_p(char *line, bool mine, char *cwd, char *home, char **env){
             if (args[mode->mode_pos + 1] != NULL)
             {
                 
-                fd = open(args[mode->mode_pos + 1], O_WRONLY | O_CREAT);
+                fd = open(args[mode->mode_pos + 1], O_WRONLY | O_CREAT | O_TRUNC);
                 fchmod(fd,S_IROTH  | S_IRGRP | S_IRUSR | S_IWUSR );
                 dup2(fd, STDOUT_FILENO);
                 args[mode->mode_pos] = NULL;
