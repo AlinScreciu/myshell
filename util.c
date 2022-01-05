@@ -95,7 +95,7 @@ char *read_file(const char *file, long *_size)
         fprintf(stderr, "cannot access '%s': No such file or directory\n", file);
         exit(1);
     }
-    if (access(file, F_OK) < 0)
+    if (access(file, R_OK) < 0)
     {
         fprintf(stderr, "'%s': Permission denied\n", file);
         exit(1);

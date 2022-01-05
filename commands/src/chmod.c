@@ -347,9 +347,12 @@ int chsym(const char *file, const char *modes)
                     if (u)
                     {
                         if (op == '+')
-                            ussr |= oth;
+                            ussr |= (oth<<3);
                         else if (op == '-')
-                            ussr &= ~oth;
+                        {
+                            printf("debug\n%o %o %o\n", ussr ,oth,oth << 4 );
+                            ussr &= ~(oth << 3);
+                        }
                         else
                             ussr = oth;
                     }
@@ -418,8 +421,15 @@ void handle_op(const char *file, mode_t l_mode, mode_t r_mode, char op, bool mas
 {   
     if (op == '=')
     {
-
-        chmod(file, r_mode);
+        if (maskf)
+        { 
+            char *new = mode_to_string(r_mode | mask);
+            char *req = mode_to_string(r_mode); 
+            fprintf(stderr,"chmod: %s: new permissions are %s, not %s\n",file,new,req);  
+            chmod(file, r_mode | mask);
+        }
+        else 
+            chmod(file, r_mode);
     
     }
     if (op == '+')

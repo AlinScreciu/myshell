@@ -5,6 +5,7 @@
         "stat.h": "c",
         "regex.h": "c",
         "stdio.h": "c",
-        "unistd.h": "c"
+        "unistd.h": "c",
+        "stdlib.h": "c"
     }
 }
