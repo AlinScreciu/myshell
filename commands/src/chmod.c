@@ -91,7 +91,7 @@ int chsym(const char *file, const char *modes)
         int targets = 0;
         char *target;
         char *perm_target;
-        bool mask_f;
+        bool mask_f = false;
         for (size_t i = 0; i < strlen(mode); i++)
         {
             if (mode[i] == '+' || mode[i] == '-' || mode[i] == '=')
@@ -105,23 +105,25 @@ int chsym(const char *file, const char *modes)
         }
         mode_t mask = umask(0000);
         umask(mask);
-        if (targets > 0)
+        if (targets == 0)
         {
-            target = strndup(mode, targets);
+            ////printf("here: %d\n", targets);
+            mask_f = true;
+            target = strdup("a");
         }
         else
         {
-            target = strdup("a");
-            mask_f = true;
+            target = strndup(mode, targets);
         }
+        // ////printf("target: %s\n",target);
 
-        perm_target = strdup(mode + targets + 1);
+            perm_target = strdup(mode + targets + 1);
 
-        //printf("target: %s\nperm: %s\nop: %c\n", target, perm_target, op);
+        ////////printf("target: %s\nperm: %s\nop: %c\n", target, perm_target, op);
         bool u = false, g = false, o = false;
-        //printf("%o %o %o %o\n", spe, ussr, grp, oth);
-        char* before = mode_to_string(spe | ussr | grp | oth);
-        //printf("%s\n", before);
+        ////////printf("%o %o %o %o\n", spe, ussr, grp, oth);
+        char *before = mode_to_string(spe | ussr | grp | oth);
+        // ////printf("%s\n", before);
         for (size_t i = 0; i < strlen(target); i++)
         {
             for (size_t j = 0; j < strlen(perm_target); j++)
@@ -304,21 +306,29 @@ int chsym(const char *file, const char *modes)
                     if (g)
                     {
                         if (op == '+')
-                            grp |= ussr;
+                            grp |= (ussr >> 3);
                         else if (op == '-')
-                            grp &= ~ussr;
+                            grp &= ~(ussr >> 3);
                         else
-                            grp = ussr;
+                            grp = (ussr >> 3);
                     }
 
                     if (o)
                     {
                         if (op == '+')
-                            oth |= ussr;
+                            oth |= (ussr >> 6);
                         else if (op == '-')
-                            oth &= ~ussr;
+                            oth &= ~(ussr >> 6);
                         else
-                            oth = ussr;
+                            oth = (ussr >> 6);
+                    }
+
+                    if (u)
+                    {
+                        if (op == '+')
+                            ussr |= ussr ;
+                        else if (op == '-')
+                            ussr &= ~ussr;
                     }
                 }
                 if (perm_target[j] == 'g')
@@ -326,20 +336,27 @@ int chsym(const char *file, const char *modes)
                     if (u)
                     {
                         if (op == '+')
-                            ussr |= grp;
+                            ussr |= (grp << 3);
                         else if (op == '-')
-                            ussr &= ~grp;
+                            ussr &= ~(grp << 3);
                         else
-                            ussr = grp;
+                            ussr = (grp << 3);
                     }
                     if (o)
                     {
                         if (op == '+')
-                            oth |= grp;
+                            oth |= (grp >> 3);
                         else if (op == '-')
-                            oth &= ~grp;
+                            oth &= ~(grp >> 3);
                         else
-                            oth = grp;
+                            oth = (grp >> 3);
+                    }
+                    if(g)
+                    {
+                        if (op == '+')
+                            grp |= grp;
+                        else if (op == '-')
+                            grp &= ~grp;
                     }
                 }
                 if (perm_target[j] == 'o')
@@ -347,23 +364,29 @@ int chsym(const char *file, const char *modes)
                     if (u)
                     {
                         if (op == '+')
-                            ussr |= (oth<<3);
+                            ussr |= (oth << 6);
                         else if (op == '-')
                         {
-                            printf("debug\n%o %o %o\n", ussr ,oth,oth << 4 );
-                            ussr &= ~(oth << 3);
+                            ussr &= ~(oth << 6);
                         }
                         else
-                            ussr = oth;
+                            ussr = (oth << 6);
                     }
                     if (g)
                     {
                         if (op == '+')
-                            grp |= oth;
+                            grp |= (oth << 3);
                         else if (op == '-')
-                            grp &= ~oth;
+                            grp &= ~(oth << 3);
                         else
-                            grp = oth;
+                            grp = (oth << 3);
+                    }
+                    if (o)
+                    {
+                        if (op == '+')
+                            oth |= oth;
+                        else if (op == '-')
+                            oth &= ~oth;
                     }
                 }
             }
@@ -376,20 +399,21 @@ int chsym(const char *file, const char *modes)
             }
             if (target[i] == 'u')
             {
-                handle_op(file, file_mode, spe | ussr | grp | oth, '=', mask_f, mask);
+                handle_op(file, file_mode, (file_mode & 00077) | ussr | spe, '=', mask_f, mask);
             }
             if (target[i] == 'g')
             {
-                handle_op(file, file_mode, spe | ussr | grp | oth, '=', mask_f, mask);
+
+                handle_op(file, file_mode, (file_mode & 00707) | grp | spe, '=', mask_f, mask);
             }
             if (target[i] == 'o')
             {
-                handle_op(file, file_mode, spe | ussr | grp | oth, '=', mask_f, mask);
+                // ////printf("%o %o %o\n",file_mode & 07770, oth, (file_mode & 00770) | oth | spe);
+                handle_op(file, file_mode, (file_mode & 00770) | oth | spe, '=', mask_f, mask);
             }
         }
-        //printf("%o %o %o %o\n", spe, ussr, grp, oth);
-        char* after = mode_to_string(spe | ussr | grp | oth);
-        //printf("%s\n",after );
+        char *after = mode_to_string(spe | ussr | grp | oth);
+        // ////printf("%s\n",after );
         free(target);
         free(after);
         free(before);
@@ -418,19 +442,30 @@ int choct(const char *file, char *mode)
 }
 
 void handle_op(const char *file, mode_t l_mode, mode_t r_mode, char op, bool maskf, mode_t mask)
-{   
+{
     if (op == '=')
     {
         if (maskf)
-        { 
-            char *new = mode_to_string(r_mode | mask);
-            char *req = mode_to_string(r_mode); 
-            fprintf(stderr,"chmod: %s: new permissions are %s, not %s\n",file,new,req);  
-            chmod(file, r_mode | mask);
+        {   
+            ////printf("%o\n",r_mode);
+            mode_t r_res = mask & ~r_mode;
+            mode_t l_res = mask & ~l_mode;
+            mode_t res = r_res & ~l_res;
+            if(res == 0)
+                chmod(file, r_mode);
+            else {
+                char *new = mode_to_string(res | r_mode);
+                char *old = mode_to_string(r_mode);
+                //printf("%o\n",l_mode);
+                fprintf(stderr, "chmod: %s: new permissions are %s, not %s\n",file,new,old);
+                chmod(file,res | r_mode);
+                free(new);
+                free(old);                
+            }
         }
-        else 
-            chmod(file, r_mode);
-    
+        else{
+            ////printf("%s\n",mode_to_string(r_mode)); 
+            chmod(file,r_mode);}
     }
     if (op == '+')
     {
@@ -450,39 +485,36 @@ char *mode_to_string(mode_t mode)
 
     smode[i++] = (mode & S_IRUSR) ? 'r' : '-';
     smode[i++] = (mode & S_IWUSR) ? 'w' : '-';
-    
 
-    if ((mode & S_IXUSR) && (mode & S_ISUID))  
+    if ((mode & S_IXUSR) && (mode & S_ISUID))
         smode[i++] = 's';
     else if (!(mode & S_IXUSR) && (mode & S_ISUID))
         smode[i++] = 'S';
-    else if(mode & S_IXUSR)
+    else if (mode & S_IXUSR)
         smode[i++] = 'x';
     else
         smode[i++] = '-';
-    
 
     smode[i++] = (mode & S_IRGRP) ? 'r' : '-';
     smode[i++] = (mode & S_IWGRP) ? 'w' : '-';
-    
-    if ((mode & S_IXGRP) && (mode & S_ISGID))  
+
+    if ((mode & S_IXGRP) && (mode & S_ISGID))
         smode[i++] = 's';
     else if (!(mode & S_IXGRP) && (mode & S_ISGID))
         smode[i++] = 'S';
-    else if(mode & S_IXGRP)
+    else if (mode & S_IXGRP)
         smode[i++] = 'x';
     else
         smode[i++] = '-';
-    
 
     smode[i++] = (mode & S_IROTH) ? 'r' : '-';
     smode[i++] = (mode & S_IWOTH) ? 'w' : '-';
-    
-    if ((mode & S_IXOTH) && (mode & S_ISVTX))  
-        smode[i++] = 's';
+
+    if ((mode & S_IXOTH) && (mode & S_ISVTX))
+        smode[i++] = 't';
     else if (!(mode & S_IXOTH) && (mode & S_ISVTX))
-        smode[i++] = 'S';
-    else if(mode & S_IXOTH)
+        smode[i++] = 'T';
+    else if (mode & S_IXOTH)
         smode[i++] = 'x';
     else
         smode[i++] = '-';
