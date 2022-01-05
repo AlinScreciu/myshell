@@ -131,10 +131,10 @@ char *read_file(const char *file, long *_size)
     return content;
 }
 
-char **get_lines( const char *file, long size, int line_size[])
+char **get_lines(const char *file, long size, int line_size[])
 {
     int lines = count_lines(file, size, NULL) + 1;
-    char** line = (char**) malloc(lines*sizeof(char*));
+    char **line = (char **)malloc(lines * sizeof(char *));
     int j = 0;
     long last = 0;
     for (long i = 0; i < size; i++)
@@ -144,10 +144,11 @@ char **get_lines( const char *file, long size, int line_size[])
             line[j] = malloc(sizeof(char) * (i - last + 2));
             memcpy(line[j++], file + last, i - last + 1);
             line[j - 1][i - last + 2] = '\0';
+            line_size[j-1] = i - last + 1;
             last = i + 1;
         }
     }
-    
+
     return line;
 }
 int count_lines(const char *file, long size, bool *binary)
