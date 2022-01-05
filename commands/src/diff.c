@@ -6,7 +6,6 @@
 #include <stdbool.h>
 
 char *getfile(const char *path, long *size);
-void handle_op(int argc, char **argv, bool *brief, bool *text, char *p1, char *p2);
 int main(int argc, char *argv[])
 {
     bool brief = false, text = false;
@@ -92,6 +91,21 @@ int main(int argc, char *argv[])
             }
         }
     }
+    if (binary && !text && !brief)
+    {
+        if (size1 != size2)
+        {
+            printf("Binary files %s and %s differ\n", path1, path2);
+        }
+        else
+        {
+            if (!memcmp(path1, path2, size1 * sizeof(char)) == 0)
+            {
+
+                printf("Binary files %s and %s differ\n", path1, path2);
+            }
+        }
+    }
     for (int i = 0; i < lines_file1; i++)
     {
         free(line1[i]);
@@ -129,7 +143,4 @@ char *getfile(const char *path, long *size)
         *size = i;
         return s;
     }
-}
-void handle_op(int argc, char **argv, bool *brief, bool *text, char *p1, char *p2)
-{
 }
