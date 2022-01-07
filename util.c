@@ -88,7 +88,7 @@ void parse_pipe(char *line, char *args[], int argc)
     free(token);
 }
 
-char *read_file(const char *file, long *_size)
+char *read_file(const char *file, long *_size, bool newline)
 {
     if (access(file, F_OK) < 0)
     {
@@ -114,7 +114,7 @@ char *read_file(const char *file, long *_size)
     }
 
     long size = st.st_size;
-    *_size = size + 1;
+    *_size = newline ? size + 1 : size;
     char *content = (char *)malloc((size + 1) * sizeof(char));
     int rerr = read(fd, content, size);
     if (rerr < 0)
@@ -122,8 +122,11 @@ char *read_file(const char *file, long *_size)
         perror("read");
         exit(1);
     }
-    content[size] = '\n';
-    content[size + 1] = '\0';
+    if (newline)
+    {
+        content[size] = '\n';
+        content[size + 1] = '\0';
+    } else content[size] = '\0';
     if (close(fd) < 0)
     {
         perror("close");

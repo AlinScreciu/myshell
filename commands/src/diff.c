@@ -84,7 +84,7 @@ int main(int argc, char *argv[])
         }
         else
         {
-            if (!memcmp(path1, path2, size1 * sizeof(char)) == 0)
+            if (!(memcmp(path1, path2, size1 * sizeof(char)) == 0))
             {
 
                 printf("Files %s and %s differ\n", path1, path2);
@@ -99,13 +99,24 @@ int main(int argc, char *argv[])
         }
         else
         {
-            if (!memcmp(path1, path2, size1 * sizeof(char)) == 0)
+            if (!(memcmp(path1, path2, size1 * sizeof(char)) == 0))
             {
 
                 printf("Binary files %s and %s differ\n", path1, path2);
             }
         }
     }
+
+    printf("normal case\n");
+
+
+
+
+
+    
+
+
+
     for (int i = 0; i < lines_file1; i++)
     {
         free(line1[i]);
@@ -122,25 +133,43 @@ char *getfile(const char *path, long *size)
 {
     if (strcmp(path, "-") != 0)
     {
-        char *file = read_file(path, size);
+        char *file = read_file(path, size, true);
         return file;
     }
     else
     {
-        int i = 0;
-        char c;
-        char *s = malloc(sizeof(char));
-        while ((c = getchar()) != EOF)
+        int c;
+    size_t p4kB = 4096, i = 0;
+    void *newPtr = NULL;
+    char *ptrString = malloc(p4kB * sizeof (char));
+
+    while (ptrString != NULL && (c = getchar()) != '\n' && c != EOF)
+    {
+        if (i == p4kB * sizeof (char))
         {
-            s[i++] = c;
-            if (realloc(s, sizeof(char) * i) == NULL)
-                exit(1);
+            p4kB += 4096;
+            if ((newPtr = realloc(ptrString, p4kB * sizeof (char))) != NULL)
+                ptrString = (char*) newPtr;
+            else
+            {
+                free(ptrString);
+                return NULL;
+            }
         }
-        if (realloc(s, sizeof(char) * (i + 2)) == NULL)
-            exit(1);
-        s[i++] = '\n';
-        s[i] = '\0';
-        *size = i;
-        return s;
+        ptrString[i++] = c;
+    }
+
+    if (ptrString != NULL)
+    {
+        ptrString[i] = '\0';
+        ptrString = realloc(ptrString, strlen(ptrString) + 1);
+    } 
+    else return NULL;
+
+    ptrString = realloc(ptrString, strlen(ptrString) + 1);
+    ptrString[i++] = '\n';
+    ptrString[i] = '\0';
+    *size = i;
+    return ptrString;
     }
 }

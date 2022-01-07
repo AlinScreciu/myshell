@@ -13,7 +13,7 @@ void envset(char **, char *, char *);
 int count_args(const char *, char *);
 void parse_args(char *, char *[], int);
 void parse_pipe(char *, char *[], int);
-char *read_file(const char *, long *);
+char *read_file(const char *, long *, bool);
 char **get_lines(const char *file, long size, int linesize[]);
 int count_lines(const char *file, long size, bool *);
 #endif

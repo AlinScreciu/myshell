@@ -38,11 +38,9 @@ void sigint_handler()
 
     siglongjmp(env, 42);
 }
-char *built_in_commands[] = {"hist", "cd", "env","help"};
-int nr_of_built_in_commands = 4;
 
-char *my_commands[] = {"cwd","more","diff", "chmod"};
-int nr_of_my_commands = 4;
+
+
 
 void hist()
 {
@@ -58,7 +56,9 @@ void hist()
     }
 }
 bool check_origin(char *line_to_copy)
-{
+{   
+    char *built_in_commands[] = {"hist", "cd", "env","help"};
+    int nr_of_built_in_commands = 4;
     char *line = malloc(sizeof(char) * strlen(line_to_copy) + 1);
     strcpy(line, line_to_copy);
     char *command = strtok(line, " ");
@@ -73,7 +73,8 @@ bool check_origin(char *line_to_copy)
     return isbuilt_in;
 }
 bool check_mine(char *line_to_copy)
-{
+{   char* my_commands[] = {"cwd","more","diff", "chmod","cp"};
+    int nr_of_my_commands = 5;
     bool mine = false;
     char *line = malloc(sizeof(char) * strlen(line_to_copy) + 1);
     strcpy(line, line_to_copy);

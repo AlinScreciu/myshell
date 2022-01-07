@@ -1,8 +1,0 @@
-total 20
-drwxr-xr-x 1 alin root  4096 Nov 26 00:34 bin
-drwxr-xr-x 1 alin alin  4096 Nov 26 00:07 commands
--rw-r--r-- 1 alin alin 10820 Dec  4 21:58 myshell.c
--rw-r--r-- 1 alin alin   362 Dec  4 21:57 test.txt
--rw-r--r-- 1 alin alin  2126 Nov 26 20:45 util.c
--rw-r--r-- 1 alin alin   112 Nov 25 15:03 util.h
--rw-r--r-- 1 alin alin  2157 Dec  4 20:54 whatever.txt
