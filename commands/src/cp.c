@@ -139,25 +139,41 @@ int main(int argc, char *argv[])
     }
     for (int i = 0; i < paths; i++)
     {
-
+        
         char *dest;
-        struct stat st;
+        struct stat target_;
+        struct stat file_;
         bool destdir = false, currentdir = false;
-        if (stat(target, &st) < 0)
+        if (stat(target, &target_) < 0)
         {
             fprintf(stderr, "cp: failed to access '%s': ", target);
             perror(NULL);
-            return -1;
+            continue;
         }
-        if (S_ISDIR(st.st_mode) != 0)
+        if (S_ISDIR(target_.st_mode) != 0)
         {
             destdir = true;
             dest = get_dest(path[i], target);
         }
         else
             dest = strdup(target);
-        stat(path[i], &st);
-        if ((S_ISDIR(st.st_mode) != 0))
+
+        if (stat(dest, &target_) < 0)
+        {
+            fprintf(stderr, "cp: failed to stat '%s': ", dest);
+            perror(NULL);
+            continue;
+        }
+
+        printf("%d\n", stat(path[i], &file_));
+        if (stat(path[i], &file_) < 0)
+        {
+            fprintf(stderr, "cp: cannot stat '%s': ", path[i]);
+            perror(NULL);
+            continue;
+        }
+        
+        if ((S_ISDIR(file_.st_mode) != 0))
         {
             currentdir = true;
             if (!recursive)
@@ -166,11 +182,12 @@ int main(int argc, char *argv[])
                 continue;
             }
         }
-        if (verbose && (!currentdir && !recursive))
+        if (verbose && (!currentdir))
             printf("'%s' -> '%s'\n", path[i], dest);
-        if (valid(path[i], recursive) < 0)
-            continue;
-
+        
+        
+        // if (recursive && currentdir) 
+        //     if (path[i], dest, )
         if (!recursive)
             if (move(path[i], dest, interactive, destdir) < 0)
                 continue;
@@ -204,18 +221,7 @@ int check_dir(const char *path, const char *err_message)
     }
     return 0;
 }
-int valid(const char *path, bool recursive)
-{
 
-    struct stat st;
-    if (stat(path, &st) < 0)
-    {
-        fprintf(stderr, "cp: cannot stat '%s': ", path);
-        perror(NULL);
-        return -1;
-    };
-    return 0;
-}
 int move(const char *path, const char *dest, bool interactive, bool destdir)
 {
 
