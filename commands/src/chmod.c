@@ -451,29 +451,54 @@ void handle_op(const char *file, mode_t l_mode, mode_t r_mode, char op, bool mas
             mode_t r_res = mask & ~r_mode;
             mode_t l_res = mask & ~l_mode;
             mode_t res = r_res & ~l_res;
-            if(res == 0)
-                chmod(file, r_mode);
+            if(res == 0){
+                if (chmod(file, r_mode) < 0)
+                {
+                    fprintf(stderr,"changing permissions of '%s': ",file);
+                    perror(NULL);
+                    return;
+                }}
             else {
                 char *new = mode_to_string(res | r_mode);
                 char *old = mode_to_string(r_mode);
                 //printf("%o\n",l_mode);
                 fprintf(stderr, "chmod: %s: new permissions are %s, not %s\n",file,new,old);
-                chmod(file,res | r_mode);
+                if (chmod(file,res | r_mode) < 0)
+                {
+                    fprintf(stderr,"changing permissions of '%s': ",file);
+                    perror(NULL);
+                    return;
+                }
                 free(new);
                 free(old);                
             }
         }
         else{
             ////printf("%s\n",mode_to_string(r_mode)); 
-            chmod(file,r_mode);}
+            if (chmod(file,r_mode) < 0 )
+            {
+                fprintf(stderr,"changing permissions of '%s': ",file);
+                    perror(NULL);
+                    return;
+            }}
     }
     if (op == '+')
     {
-        chmod(file, l_mode | r_mode);
+        if (chmod(file, l_mode | r_mode) < 0)
+        {
+            fprintf(stderr,"changing permissions of '%s': ",file);
+                    perror(NULL);
+                    return;
+        }
     }
     if (op == '-')
     {
-        chmod(file, l_mode & ~r_mode);
+        if (chmod(file, l_mode & ~r_mode) < 0)
+        {
+            fprintf(stderr,"changing permissions of '%s': ",file);
+                    perror(NULL);
+                    return;
+        }
     }
 }
 // this can also be used for ls -l

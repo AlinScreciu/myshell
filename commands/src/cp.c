@@ -7,25 +7,27 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <ctype.h>
-
+#include <sys/types.h>
+#include <dirent.h>
+#include <errno.h>
 #define __HELP "Try 'cp --help' for more information"
 #define __MISSINGDEST "cp: missing destination file operand"
 #define __MISSINGFILE "cp: missing operand"
 
-// check if path is a directory, and if it is print err_message
-// error message must contain %s where the file name will be added
-int check_dir(const char *, const char *);
 // check if path is valid to read from
 // in case of recursive directory can be valid
-const char *get_type(mode_t mode);
+const char *get_type(mode_t);
 int valid(const char *, bool);
-int move(const char *, const char *, bool, bool);
+// move path 1 to path 2
+int move(const char *, const char *, bool);
 char *read_file(const char *);
-char *get_dest(const char *, const char *);
+char *get_dest(const char *, const char *, bool);
+int core_loop(char** path, int paths, const char* target, bool recursive, bool interactive, bool verbose, bool dir);
+int move_from_dir(const char *, const char *, bool , bool , bool , bool );
 int main(int argc, char *argv[])
 {
 
-    if (argc < 2)
+    if (argc < 2) 
     {
         fputs(__MISSINGDEST "\n"__HELP
                             "\n",
@@ -71,12 +73,10 @@ int main(int argc, char *argv[])
             else
             {
                 struct stat st;
-                int res;
                 if (stat(optarg, &st) < 0)
                 {
                     fprintf(stderr, "cp: failed to access '%s': ", optarg);
                     perror(NULL);
-                    printf("\n");
                     exit(1);
                 }
                 if (!S_ISDIR(st.st_mode))
@@ -131,67 +131,31 @@ int main(int argc, char *argv[])
 
     if (!target_dir)
         target = path[paths-- - 1];
-
-    if (target_dir || paths > 1)
+    bool dir = false;
+    if (access(target, F_OK) == 0)
     {
-        if (check_dir(target, "cp: target '%s' is not a directory\n") < 0)
-            exit(1);
+        struct stat st;
+        stat(target, &st);
+        dir = S_ISDIR(st.st_mode) != 0;
     }
-    for (int i = 0; i < paths; i++)
+    if (recursive)
     {
-        
-        char *dest;
-        struct stat target_;
-        struct stat file_;
-        bool destdir = false, currentdir = false;
-        if (stat(target, &target_) < 0)
+        for (int i = 0; i < paths; i++)
         {
-            fprintf(stderr, "cp: failed to access '%s': ", target);
-            perror(NULL);
-            continue;
-        }
-        if (S_ISDIR(target_.st_mode) != 0)
-        {
-            destdir = true;
-            dest = get_dest(path[i], target);
-        }
-        else
-            dest = strdup(target);
-
-        if (stat(dest, &target_) < 0)
-        {
-            fprintf(stderr, "cp: failed to stat '%s': ", dest);
-            perror(NULL);
-            continue;
-        }
-
-        printf("%d\n", stat(path[i], &file_));
-        if (stat(path[i], &file_) < 0)
-        {
-            fprintf(stderr, "cp: cannot stat '%s': ", path[i]);
-            perror(NULL);
-            continue;
-        }
-        
-        if ((S_ISDIR(file_.st_mode) != 0))
-        {
-            currentdir = true;
-            if (!recursive)
+            struct stat st;
+            stat(path[i], &st);
+            if ((S_ISDIR(st.st_mode) == 0) && !dir)
             {
-                fprintf(stderr, "cp: -r not specified: omitting directory '%s'\n", path[i]);
-                continue;
+                fprintf(stderr, "cp: target '%s' is not a directory\n", target);
+                exit(1);
             }
         }
-        if (verbose && (!currentdir))
-            printf("'%s' -> '%s'\n", path[i], dest);
-        
-        
-        // if (recursive && currentdir) 
-        //     if (path[i], dest, )
-        if (!recursive)
-            if (move(path[i], dest, interactive, destdir) < 0)
-                continue;
     }
+    if (core_loop(path, paths, target, recursive,interactive, verbose, dir) < 0)
+    {
+        exit(-1);
+    }
+
     for (int i = 0; i < paths; i++)
     {
         free(path[i]);
@@ -199,32 +163,8 @@ int main(int argc, char *argv[])
     free(path);
     return 0;
 }
-int check_dir(const char *path, const char *err_message)
+int move(const char *path, const char *dest, bool interactive)
 {
-    if (access(path, F_OK) < 0)
-    {
-        fprintf(stderr, "cp: failed to access '%s': ", path);
-        perror(NULL);
-        return -1;
-    }
-
-    struct stat st;
-    if (stat(path, &st) < 0)
-    {
-        perror("stat");
-        return -1;
-    };
-    if (S_ISDIR(st.st_mode) == 0)
-    {
-        fprintf(stderr, err_message, path);
-        return -1;
-    }
-    return 0;
-}
-
-int move(const char *path, const char *dest, bool interactive, bool destdir)
-{
-
     char *file = read_file(path);
     if (file == NULL)
         return -1;
@@ -236,39 +176,28 @@ int move(const char *path, const char *dest, bool interactive, bool destdir)
             if ((tolower(c) == 'y'))
                 break;
             else
-                return 0;
+                return -1;
     }
     struct stat st;
-    stat(path, &st);
     int df;
-    struct stat nst;
-    if ((stat(dest, &nst) < 0) && !destdir)
-    {
-        fprintf(stderr, "cp: cannot stat '%s': ", dest);
-        perror(NULL);
-        return -1;
-    }
-    if ((df = open(dest, O_WRONLY | O_CREAT | O_TRUNC)) < 0)
+    stat(path, &st);
+
+    if ((df = open(dest, O_WRONLY | O_CREAT | O_TRUNC, 0664)) < 0)
     {
         fprintf(stderr, "cp: cannot create %s '%s': ", get_type(st.st_mode), dest);
         perror(NULL);
         return -1;
     }
+
     if (write(df, file, sizeof(char) * (st.st_size)) < 0)
     {
         fprintf(stderr, "cp: failed to write to %s: ", dest);
         perror(NULL);
         return -1;
     }
-    if (fchown(df, st.st_uid, st.st_gid) < 0)
+    if (close(df) < 0)
     {
-        fprintf(stderr, "cp: failed to preserve ownership for %s: ", dest);
-        perror(NULL);
-        return -1;
-    }
-    if (fchmod(df, st.st_mode) < 0)
-    {
-        fprintf(stderr, "cp: failed to preserve permissions for %s: ", dest);
+        fprintf(stderr, "cp: failed to close '%s': ", dest);
         perror(NULL);
         return -1;
     }
@@ -323,19 +252,169 @@ char *read_file(const char *path)
     }
     return file;
 }
-char *get_dest(const char *path, const char *target)
+char *get_dest(const char *path, const char *target, bool dir)
 {
+    // a/ a -> d d/
+    // d/a
     char *dest;
-    char *dest_base = strdup(target);
-    if (dest_base[strlen(dest_base) - 1] != '/')
+    if (dir)
     {
-        dest_base = realloc(dest_base, sizeof(char *) * (strlen(dest_base) + 1));
-        strcat(dest_base, "/");
+        dest = (char *)malloc(sizeof(char) * (strlen(target) + 1));
+        if (target[strlen(target) - 1] != '/')
+        {
+            dest = (char *)malloc(sizeof(char) * (strlen(target) + 2));
+            strcpy(dest, target);
+            strcat(dest, "/");
+        }
+        else
+            strcpy(dest, target);
+
+        if (path[strlen(path) - 1] == '/')
+        {
+            dest = (char *)realloc(dest, sizeof(char) * (strlen(dest) + strlen(path)));
+            strncat(dest, path, strlen(path) - 1);
+        }
+        else
+        {
+            dest = (char *)realloc(dest, sizeof(char) * (strlen(dest) + strlen(path) + 1));
+            strcat(dest, path);
+        }
     }
-    char *path_base = basename(path);
-    dest = (char *)malloc(sizeof(char) * (strlen(dest_base) + strlen(path) + 1));
-    strcpy(dest, dest_base);
-    strcat(dest, path_base);
-    free(dest_base);
+    else
+    {
+        char *base = basename(strdup(path));
+        dest = (char *)malloc(sizeof(char) * (strlen(target) + strlen(base) + 1));
+        if (target[strlen(target) - 1] != '/')
+        {
+            dest = (char *)malloc(sizeof(char) * (strlen(target) + strlen(base) + 2));
+            strcpy(dest, target);
+            strcat(dest, "/");
+        }
+        else
+            strcpy(dest, target);
+        strcat(dest, base);
+    }
     return dest;
+}
+int move_from_dir(const char *dir, const char *target, bool recursive, bool interactive, bool verbose, bool isdir)
+{
+    bool exists = true;
+
+    struct stat st;
+    if (stat(target, &st) < 0)
+    {
+        if (errno == ENOENT)
+        {
+            exists = false;
+        }
+        else
+        {
+            fprintf(stderr, "cp: cannot stat '%s': ", target);
+            perror(NULL);
+            return -1;
+        }
+    }
+    if ((S_ISDIR(st.st_mode) != 0) && !exists)
+    {
+        fprintf(stderr, "cp: cannot overwrite non-directory '%s' with directory '%s'\n", dir, target);
+    }
+    if (!exists)
+    {
+        if (verbose)
+            printf("'%s' -> '%s'\n", dir, target);
+
+        if (mkdir(target, 0751) < 0)
+        {
+            fprintf(stderr, "cp: cannot make directory '%s': ", dir);
+            perror(NULL);
+            return -1;
+        }
+    }
+    DIR* dirstr;
+    if ((dirstr = opendir(dir)) == NULL) {
+        fprintf(stderr, "cp: cannot open directory '%s': ",dir);
+        perror(NULL);
+        return -1;
+    }
+
+    char* pathpre = strdup(dir);
+    if (dir[strlen(dir)-1] !='/') {
+        pathpre = (char*) malloc(strlen(dir) + 2);
+        strcpy(pathpre, dir);
+        strcat(pathpre,"/");
+    }
+    struct dirent *ent;
+    char** path = NULL;
+    int paths = 0;
+    while ((ent = readdir(dirstr)) != NULL)
+    {
+        if (ent->d_name[0] != '.')
+        {
+            path = (char**) realloc(path, sizeof(char*)*(++paths));
+            path[paths - 1] = (char*)malloc(sizeof(char)*(strlen(pathpre) + strlen(ent->d_name) + 1));
+            strcpy(path[paths-1], pathpre);
+            strcat(path[paths-1], ent->d_name);
+        }
+    }
+    
+    if (core_loop(path, paths, target, recursive, interactive, verbose, true) < 0)
+    {
+        return -1;
+    }
+    for (int i = 0; i < paths; i++)
+    {
+        free(path[i]);
+    }
+    free(pathpre);
+    free(path);
+    closedir(dirstr);
+    return 0;
+}
+int core_loop(char** path, int paths, const char* target, bool recursive, bool interactive, bool verbose, bool dir)
+{
+    for (int i = 0; i < paths; i++)
+    {
+        if (access(path[i], F_OK) < 0)
+        {
+            fprintf(stderr, "cp: cannot access '%s': ", path[i]);
+            perror(NULL);
+            continue;
+        }
+
+        char *dest = strdup(target);
+        struct stat stbf;
+        bool dirpath = false;
+        if (stat(path[i], &stbf) < 0)
+        {
+            fprintf(stderr, "cp: cannot stat '%s': ", dest);
+            perror(NULL);
+            continue;
+        }
+        if (S_ISDIR(stbf.st_mode) != 0)
+            dirpath = true;
+
+        if (dirpath && !recursive)
+        {
+            fprintf(stderr, "cp: -r not specified; omiting directory '%s'\n", path[i]);
+            continue;
+        }
+        if (dir)
+            dest = get_dest(path[i], target, dirpath);
+        if (verbose && !dirpath)
+            printf("'%s' -> '%s'\n", path[i], dest);
+        
+        if (!dirpath)
+            if (move(path[i], dest, interactive) < 0)
+            {
+                continue;
+            }
+        if (dirpath)
+        {
+            if (move_from_dir(path[i], dest, recursive, interactive, verbose,dir ) < 0)
+            {
+                continue;
+            }
+        }
+    }
+    return 0;
 }
