@@ -10,13 +10,13 @@
 
 int main(int argc, char *argv[]) {
     
-    char* server_name[256] = { 0 };
+    char server_name[256] = { 0 };
   
     struct sockaddr_in *addr_host;
     struct hostent *host_server;
     int port, socket_fd, connerr;
     
-    strncpy(server_name, argv[1], SERVER_NAME_LEN_MAX);
+    strncpy(server_name, argv[1], 255);
     port =  atoi(argv[2]);
 
     host_server = gethostbyname(server_name);
@@ -34,13 +34,13 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
-    connerr = connect(socket_fd, (struct sockaddr *)addr_host, sizeof (struct sockaddr);
+    connerr = connect(socket_fd, (struct sockaddr *)addr_host, sizeof (struct sockaddr));
     if (connerr < 0 ) {
 		fprintf(stderr, "myshell_server: couldn't connect to socket on port '%d': ",port);
         perror(NULL);
         exit(1);
 	}
-
+    using_history();
     while (1){
 
         char *input = readline("myshell$ ");
@@ -53,6 +53,7 @@ int main(int argc, char *argv[]) {
         {
             continue;
         }
+        add_history(input);
         char len_str[1000000] = {0};
         sprintf(len_str, "%ld", strlen(input));
         write(socket_fd,len_str, strlen(len_str));
@@ -75,6 +76,6 @@ int main(int argc, char *argv[]) {
         free(input);
     }
 
-
+    free(addr_host);
     close(socket_fd);
 }

@@ -17,7 +17,6 @@ int main(int argc, char *argv[])
     struct sockaddr_in *address;
     pthread_attr_t threads_Attr;
     pthread_t th;
-    socklen_t len_incoming_addr;
     int opt = 1;
     port = atoi(argv[1]);
     int opterr, binderr, listenerr, initerr, detacherr;
@@ -83,7 +82,7 @@ int main(int argc, char *argv[])
             perror(NULL);
             continue;
         }
-
+        printf("Got new connection on socket fd '%d'\n", new_socket_fd);
         if (pthread_create(&th, &threads_Attr, pthread_routine, &new_socket_fd) != 0)
         {
             fprintf(stderr, "myshell_server: cannot create thread: ");
@@ -111,7 +110,7 @@ void *pthread_routine(void *arg)
         usleep(50);
         read(new_socket_fd, line, line_len);
         line[line_len] = '\0';
-        printf("command: %s\n", line);
+        printf("socket '%d': command: %s\n", new_socket_fd, line);
         if (strcmp(line, "exit") == 0)
         {
             free(line);
@@ -137,10 +136,10 @@ void *pthread_routine(void *arg)
         }
         output[i] = '\0';
         sprintf(len_str, "%ld", strlen(output));
-        printf("sending size of output: %s\n", len_str);
+        printf("socket '%d': sending size of output: %s\n", new_socket_fd, len_str);
         write(new_socket_fd, len_str, strlen(len_str));
         usleep(50);
-        printf("sending output\n");
+        printf("socket '%d': sending output\n", new_socket_fd);
         write(new_socket_fd, output, strlen(output));
 
         pclose(fp);
@@ -148,7 +147,7 @@ void *pthread_routine(void *arg)
         free(output);
         free(com);
     }
-    printf("Exit at: %d", new_socket_fd);
+    printf("\nExit at: %d\n", new_socket_fd);
     close(new_socket_fd);
     return NULL;
 }

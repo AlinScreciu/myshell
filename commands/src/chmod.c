@@ -31,11 +31,6 @@ int main(int argc, char **argv)
     for (int i = 0; i < files; i++)
     {
         file[i] = strdup(argv[i + 2]);
-        if (access(file[i], F_OK) != 0)
-        {
-            fprintf(stderr, "chmod: cannot access ‘%s’: No such file or directory\n", file[i]);
-            exit(1);
-        }
     }
     regex_t octal, symbolic;
     bool oct, sym;
@@ -43,13 +38,25 @@ int main(int argc, char **argv)
     regcomp(&symbolic, "^([ugoa]*([-+=]([rwxXst]*|[ugo]))+)", REG_EXTENDED);
     oct = !regexec(&octal, mode, 0, NULL, 0);
     sym = !regexec(&symbolic, mode, 0, NULL, 0);
+    regfree(&symbolic);
+    regfree(&octal);
     if (!oct && !sym)
     {
         fprintf(stderr, "Mode must be of form [ugoa]*([-+=]([rwxXst]*|[ugo]))+|[-+=]?[0-7]+\n");
+        free(mode);
+        for (int i = 0; i < files; i++)
+        {
+            free(file[i]);
+        }
         return 1;
     }
     for (int i = 0; i < files; i++)
     {
+        if (access(file[i], F_OK) != 0)
+        {
+            fprintf(stderr, "chmod: cannot access ‘%s’: No such file or directory\n", file[i]);
+            continue;
+        }
         if (oct)
             choct(file[i], mode);
         else if (sym)
@@ -66,7 +73,9 @@ int chsym(const char *file, const char *modes)
 {
     regex_t symbolic;
     regcomp(&symbolic, "^([ugoa]*([-+=]([rwxXst]*|[ugo])))$", REG_EXTENDED);
-    char *mode = strtok(strdup(modes), ",");
+
+    char *mode_copy = strdup(modes);
+    char *mode = strtok(mode_copy, ",");
     while (mode != NULL)
     {
         if (regexec(&symbolic, mode, 0, NULL, 0) != 0)
@@ -76,7 +85,10 @@ int chsym(const char *file, const char *modes)
         };
         mode = strtok(NULL, ",");
     }
-    mode = strtok(strdup(modes), ",");
+    regfree(&symbolic);
+    free(mode_copy);
+    mode_copy = strdup(modes);
+    mode = strtok(mode_copy, ",");
     while (mode != NULL)
     {
         struct stat stbf;
@@ -425,6 +437,7 @@ int chsym(const char *file, const char *modes)
         free(perm_target);
         mode = strtok(NULL, ",");
     }
+    free(mode_copy);
     return 0;
 }
 int choct(const char *file, char *mode)
