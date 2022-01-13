@@ -80,7 +80,12 @@ int chsym(const char *file, const char *modes)
     while (mode != NULL)
     {
         struct stat stbf;
-        stat(file, &stbf);
+        if (stat(file, &stbf) < 0)
+        {
+            fprintf(stderr, "chmod: cannot stat file '%s': ",file);
+            perror(NULL);
+            continue;
+        }
         mode_t file_mode = stbf.st_mode;
         mode_t spe, ussr, grp, oth;
         spe = 07000 & file_mode;
@@ -425,7 +430,12 @@ int chsym(const char *file, const char *modes)
 int choct(const char *file, char *mode)
 {
     struct stat stbf;
-    stat(file, &stbf);
+    if ( stat(file, &stbf) < 0)
+    {
+        fprintf(stderr, "chmod: cannot stat '%s': ", file);
+        perror(NULL);
+        return 1;
+    }
     mode_t file_mode = stbf.st_mode;
     char op = '=';
     int ops = 0;

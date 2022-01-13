@@ -26,6 +26,10 @@
         "streambuf": "c",
         "tuple": "c",
         "utility": "c",
-        "cctype": "c"
-    }
+        "cctype": "c",
+        "history.h": "c",
+        "fcntl.h": "c",
+        "string.h": "c"
+    },
+    "C_Cpp.errorSquiggles": "Disabled"
 }

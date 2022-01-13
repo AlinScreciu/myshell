@@ -139,7 +139,7 @@ int main(int argc, char *argv[])
         dir = S_ISDIR(st.st_mode) != 0;
     }
     if (recursive)
-    {
+    {   // a.txt b.txt -t c.txt  -r <- check this!
         for (int i = 0; i < paths; i++)
         {
             struct stat st;
@@ -258,7 +258,7 @@ char *get_dest(const char *path, const char *target, bool dir)
     // d/a
     char *dest;
     if (dir)
-    {
+    { 
         dest = (char *)malloc(sizeof(char) * (strlen(target) + 1));
         if (target[strlen(target) - 1] != '/')
         {
@@ -336,7 +336,6 @@ int move_from_dir(const char *dir, const char *target, bool recursive, bool inte
         perror(NULL);
         return -1;
     }
-
     char* pathpre = strdup(dir);
     if (dir[strlen(dir)-1] !='/') {
         pathpre = (char*) malloc(strlen(dir) + 2);
@@ -348,7 +347,7 @@ int move_from_dir(const char *dir, const char *target, bool recursive, bool inte
     int paths = 0;
     while ((ent = readdir(dirstr)) != NULL)
     {
-        if (ent->d_name[0] != '.')
+        if (ent->d_name[0] != '.') 
         {
             path = (char**) realloc(path, sizeof(char*)*(++paths));
             path[paths - 1] = (char*)malloc(sizeof(char)*(strlen(pathpre) + strlen(ent->d_name) + 1));
