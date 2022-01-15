@@ -1,0 +1,26 @@
+==8287== Memcheck, a memory error detector
+==8287== Copyright (C) 2002-2017, and GNU GPL'd, by Julian Seward et al.
+==8287== Using Valgrind-3.15.0 and LibVEX; rerun with -h for copyright info
+==8287== Command: ./commands/bin/more test.txt thisisatestformorejfc.txt
+==8287== Parent PID: 11
+==8287== 
+==8287== Conditional jump or move depends on uninitialised value(s)
+==8287==    at 0x483EF58: strlen (in /usr/lib/x86_64-linux-gnu/valgrind/vgpreload_memcheck-amd64-linux.so)
+==8287==    by 0x10A00F: get_lines (more.c:247)
+==8287==    by 0x1098CD: main (more.c:101)
+==8287== 
+==8287== Conditional jump or move depends on uninitialised value(s)
+==8287==    at 0x483EF58: strlen (in /usr/lib/x86_64-linux-gnu/valgrind/vgpreload_memcheck-amd64-linux.so)
+==8287==    by 0x10A125: get_lines (more.c:257)
+==8287==    by 0x1098CD: main (more.c:101)
+==8287== 
+==8287== 
+==8287== HEAP SUMMARY:
+==8287==     in use at exit: 0 bytes in 0 blocks
+==8287==   total heap usage: 71 allocs, 71 frees, 3,010 bytes allocated
+==8287== 
+==8287== All heap blocks were freed -- no leaks are possible
+==8287== 
+==8287== Use --track-origins=yes to see where uninitialised values come from
+==8287== For lists of detected and suppressed errors, rerun with: -s
+==8287== ERROR SUMMARY: 128 errors from 2 contexts (suppressed: 0 from 0)

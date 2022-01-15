@@ -22,12 +22,12 @@ int valid(const char *, bool);
 int move(const char *, const char *, bool);
 char *read_file(const char *);
 char *get_dest(const char *, const char *, bool);
-int core_loop(char** path, int paths, const char* target, bool recursive, bool interactive, bool verbose, bool dir);
-int move_from_dir(const char *, const char *, bool , bool , bool , bool );
+int core_loop(char **path, int paths, const char *target, bool recursive, bool interactive, bool verbose, bool dir);
+int move_from_dir(const char *, const char *, bool, bool, bool, bool);
 int main(int argc, char *argv[])
 {
 
-    if (argc < 2) 
+    if (argc < 2)
     {
         fputs(__MISSINGDEST "\n"__HELP
                             "\n",
@@ -116,7 +116,7 @@ int main(int argc, char *argv[])
                                       "\n");
         exit(1);
     }
-    char **path = (char **)calloc(paths, sizeof(char *));
+    char *path[paths];
     int pi = 0;
     for (int i = 1; i < argc; i++)
     {
@@ -125,7 +125,9 @@ int main(int argc, char *argv[])
             if (target_dir)
                 if (argv[i] == argv[target_index])
                     continue;
-            path[pi++] = strdup(argv[i]);
+
+            path[pi] = strdup(argv[i]);
+            pi++;
         }
     }
 
@@ -139,7 +141,7 @@ int main(int argc, char *argv[])
         dir = S_ISDIR(st.st_mode) != 0;
     }
     if (recursive)
-    {   // a.txt b.txt -t c.txt  -r <- check this!
+    { // a.txt b.txt -t c.txt  -r <- check this!
         for (int i = 0; i < paths; i++)
         {
             struct stat st;
@@ -147,12 +149,17 @@ int main(int argc, char *argv[])
             if ((S_ISDIR(st.st_mode) == 0) && !dir)
             {
                 fprintf(stderr, "cp: target '%s' is not a directory\n", target);
-                exit(1);
+                exit(-1);
             }
         }
     }
-    if (core_loop(path, paths, target, recursive,interactive, verbose, dir) < 0)
+    if (core_loop(path, paths, target, recursive, interactive, verbose, dir) < 0)
     {
+        for (int i = 0; i < paths; i++)
+        {
+            free(path[i]);
+        }
+        if (!target_dir) free(target);
         exit(-1);
     }
 
@@ -160,7 +167,7 @@ int main(int argc, char *argv[])
     {
         free(path[i]);
     }
-    free(path);
+    if (!target_dir) free(target);
     return 0;
 }
 int move(const char *path, const char *dest, bool interactive)
@@ -256,12 +263,13 @@ char *get_dest(const char *path, const char *target, bool dir)
 {
     // a/ a -> d d/
     // d/a
-    char *dest;
+    char *dest = NULL;
     if (dir)
-    { 
+    {
         dest = (char *)malloc(sizeof(char) * (strlen(target) + 1));
         if (target[strlen(target) - 1] != '/')
         {
+            free(dest);
             dest = (char *)malloc(sizeof(char) * (strlen(target) + 2));
             strcpy(dest, target);
             strcat(dest, "/");
@@ -282,10 +290,12 @@ char *get_dest(const char *path, const char *target, bool dir)
     }
     else
     {
-        char *base = basename(strdup(path));
+        char *path_copy = strdup(path);
+        char *base = basename(path_copy);
         dest = (char *)malloc(sizeof(char) * (strlen(target) + strlen(base) + 1));
         if (target[strlen(target) - 1] != '/')
         {
+            free(dest);
             dest = (char *)malloc(sizeof(char) * (strlen(target) + strlen(base) + 2));
             strcpy(dest, target);
             strcat(dest, "/");
@@ -293,6 +303,7 @@ char *get_dest(const char *path, const char *target, bool dir)
         else
             strcpy(dest, target);
         strcat(dest, base);
+        free(path_copy);
     }
     return dest;
 }
@@ -314,12 +325,18 @@ int move_from_dir(const char *dir, const char *target, bool recursive, bool inte
             return -1;
         }
     }
-    if ((S_ISDIR(st.st_mode) != 0) && !exists)
+    if (exists)
     {
-        fprintf(stderr, "cp: cannot overwrite non-directory '%s' with directory '%s'\n", dir, target);
+        printf("%s, %.4o\n", target,st.st_mode);
+        if (S_ISDIR(st.st_mode) == 0)
+        {
+            fprintf(stderr, "cp: cannot overwrite non-directory '%s' with directory '%s'\n", dir, target);
+            return -1;
+        }
     }
     if (!exists)
     {
+       
         if (verbose)
             printf("'%s' -> '%s'\n", dir, target);
 
@@ -330,32 +347,35 @@ int move_from_dir(const char *dir, const char *target, bool recursive, bool inte
             return -1;
         }
     }
-    DIR* dirstr;
-    if ((dirstr = opendir(dir)) == NULL) {
-        fprintf(stderr, "cp: cannot open directory '%s': ",dir);
+    DIR *dirstr;
+    if ((dirstr = opendir(dir)) == NULL)
+    {
+        fprintf(stderr, "cp: cannot open directory '%s': ", dir);
         perror(NULL);
         return -1;
     }
-    char* pathpre = strdup(dir);
-    if (dir[strlen(dir)-1] !='/') {
-        pathpre = (char*) malloc(strlen(dir) + 2);
+    char *pathpre = strdup(dir);
+    if (dir[strlen(dir) - 1] != '/')
+    {
+        free(pathpre);
+        pathpre = (char *)malloc(strlen(dir) + 2);
         strcpy(pathpre, dir);
-        strcat(pathpre,"/");
+        strcat(pathpre, "/");
     }
     struct dirent *ent;
-    char** path = NULL;
+    char **path = NULL;
     int paths = 0;
     while ((ent = readdir(dirstr)) != NULL)
     {
-        if (ent->d_name[0] != '.') 
+        if (ent->d_name[0] != '.')
         {
-            path = (char**) realloc(path, sizeof(char*)*(++paths));
-            path[paths - 1] = (char*)malloc(sizeof(char)*(strlen(pathpre) + strlen(ent->d_name) + 1));
-            strcpy(path[paths-1], pathpre);
-            strcat(path[paths-1], ent->d_name);
+            path = (char **)realloc(path, sizeof(char *) * (++paths));
+            path[paths - 1] = (char *)malloc(sizeof(char) * (strlen(pathpre) + strlen(ent->d_name) + 1));
+            strcpy(path[paths - 1], pathpre);
+            strcat(path[paths - 1], ent->d_name);
         }
     }
-    
+
     if (core_loop(path, paths, target, recursive, interactive, verbose, true) < 0)
     {
         return -1;
@@ -369,7 +389,7 @@ int move_from_dir(const char *dir, const char *target, bool recursive, bool inte
     closedir(dirstr);
     return 0;
 }
-int core_loop(char** path, int paths, const char* target, bool recursive, bool interactive, bool verbose, bool dir)
+int core_loop(char **path, int paths, const char *target, bool recursive, bool interactive, bool verbose, bool dir)
 {
     for (int i = 0; i < paths; i++)
     {
@@ -387,6 +407,7 @@ int core_loop(char** path, int paths, const char* target, bool recursive, bool i
         {
             fprintf(stderr, "cp: cannot stat '%s': ", dest);
             perror(NULL);
+            free(dest);
             continue;
         }
         if (S_ISDIR(stbf.st_mode) != 0)
@@ -395,25 +416,30 @@ int core_loop(char** path, int paths, const char* target, bool recursive, bool i
         if (dirpath && !recursive)
         {
             fprintf(stderr, "cp: -r not specified; omiting directory '%s'\n", path[i]);
+            free(dest);
             continue;
         }
-        if (dir)
-            dest = get_dest(path[i], target, dirpath);
+        if (dir){
+            free(dest);
+            dest = get_dest(path[i], target, dirpath);}
         if (verbose && !dirpath)
             printf("'%s' -> '%s'\n", path[i], dest);
-        
+
         if (!dirpath)
             if (move(path[i], dest, interactive) < 0)
             {
+                free(dest);
                 continue;
             }
         if (dirpath)
         {
-            if (move_from_dir(path[i], dest, recursive, interactive, verbose,dir ) < 0)
+            if (move_from_dir(path[i], dest, recursive, interactive, verbose, dir) < 0)
             {
+                free(dest);
                 continue;
             }
         }
+        free(dest);
     }
     return 0;
 }

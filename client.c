@@ -7,7 +7,8 @@
 #include <unistd.h>
 #include <readline/readline.h>
 #include <readline/history.h>
-
+#include <signal.h>
+void signal_handler(int signal_number);
 int main(int argc, char *argv[]) {
     
     char server_name[256] = { 0 };
@@ -41,6 +42,8 @@ int main(int argc, char *argv[]) {
         exit(1);
 	}
     using_history();
+    signal(SIGINT, signal_handler);
+
     while (1){
 
         char *input = readline("myshell$ ");
@@ -78,4 +81,8 @@ int main(int argc, char *argv[]) {
 
     free(addr_host);
     close(socket_fd);
+}
+void signal_handler(int signal_number)
+{
+    printf("\nmyshell$ ");
 }
