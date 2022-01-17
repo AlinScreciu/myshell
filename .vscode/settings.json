@@ -29,7 +29,8 @@
         "cctype": "c",
         "history.h": "c",
         "fcntl.h": "c",
-        "string.h": "c"
+        "string.h": "c",
+        "stdbool.h": "c"
     },
     "C_Cpp.errorSquiggles": "Disabled"
 }

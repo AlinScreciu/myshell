@@ -13,18 +13,52 @@
 #include <sys/ioctl.h>
 #include <signal.h>
 #include <termios.h>
+#include <ctype.h>
+
 #define WBG "\033[48;5;252m"
 #define BFG "\033[38;5;0m"
 #define RES "\033[0m"
-unsigned short rows, cols;
+
+unsigned short rows;
 void signal_handler(int);
 char *get_file(const char *path);
-char **get_lines(const char *path);
+char **get_lines(const char *path, int *lines);
 // print lines from x to x plus y
 int x_to_xy(char **line, int x, int y);
 static struct termios oldt, newt;
 void cleanup(void);
-
+void print_sep(char sep, int times)
+{
+    while (times--)
+    {
+        putchar(sep);
+    }
+}
+void usage(void)
+{
+    fputs("Most commands optionally preceded by integer argument k.  "
+		"Defaults in brackets.\n"
+		"Star (*) indicates argument becomes new default.\n", stdout);
+    print_sep('-', 79);
+	fputs(
+		
+		"\n<space>                 Display next k lines of text [current screen size]\n"
+		 "z                       Display next k lines of text [current screen size]*\n"
+		 "<return>                Display next k lines of text [1]*\n"
+		 "d or ctrl-D             Scroll k lines [current scroll size, initially 11]*\n"
+		 "q or Q or <interrupt>   Exit from more\n"
+		 "s                       Skip forward k lines of text [1]\n"
+		 "f                       Skip forward k screenfuls of text [1]\n"
+		 "b or ctrl-B             Skip backwards k screenfuls of text [1]\n"
+		 "=                       Display current line number\n"
+		 "ctrl-L                  Redraw screen\n"
+		 ":n                      Go to kth next file [1]\n"
+		 ":p                      Go to kth previous file [1]\n"
+		 ":f                      Display current file name and line number\n"
+		 ".                       Repeat previous command\n", stdout);
+    print_sep('-',79);
+    printf("\n");
+}
 int main(int argc, char **argv)
 {
     sysconf(_SC_ATEXIT_MAX);
@@ -47,8 +81,7 @@ int main(int argc, char **argv)
     tcsetattr(STDIN_FILENO, TCSANOW, &newt);
     struct winsize ws;
     ioctl(STDIN_FILENO, TIOCGWINSZ, &ws);
-    rows = ws.ws_row;
-    cols = ws.ws_col;
+    rows = ws.ws_row - 1;
     struct sigaction s;
     s.sa_handler = signal_handler;
     sigemptyset(&s.sa_mask);
@@ -63,123 +96,173 @@ int main(int argc, char **argv)
     int user_lines;
     bool num = false, sqz = false, nbl = false;
 
-    char opt;
-
-    while ((opt = getopt(argc, argv, "1234567891:2:3:4:5:6:7:8:9:sd")) != -1)
+    for (int i = 1 ; i < argc; i++)
     {
-        if ((opt >= '1') && (opt <= '9'))
+        if (argv[i][0] == '-' && isdigit(argv[i][1]))
         {
             num = true;
-            if (optarg != NULL)
-            {
-                char conv[strlen(optarg) + 2];
-                sprintf(conv, "%c%s", opt, optarg);
-                user_lines = atoi(conv);
-            }
-            else
-                user_lines = atoi(&opt);
-            continue;
+            user_lines = atoi(argv[i]+1);
         }
-        if (opt == 's')
-        {
-            sqz = true;
-            continue;
-        }
-        if (opt == 'd')
-        {
-            nbl = true;
-        }
+         if (argv[i][0] == '-')
+         {
+             if (argv[i][1] == 'd')
+             {
+                 nbl = true;
+             }
+             if (argv[i][1] == 's')
+             {
+                 sqz = true;
+             }
+         }
     }
+    char opt;
+    int ps = 1;
+    while(argv[ps++][0] == '-');
+    ps--;
     bool exit = false, banner = false, shownbanner = false;
     int space_def;
-    if (optind + 1 < argc)
+    if (ps + 1 < argc)
         banner = true;
-    for (int i = optind; (i < argc) && !exit; i++)
+    int initial = rows;
+    if (num) initial = user_lines;
+    
+    for (int i = ps; (i < argc) && !exit; i++)
     {
-        shownbanner = false;
-        space_def = rows;
-        char **line = get_lines(argv[i]);
+        
+        int file_lines;
+        bool shownbanner = false;
+        char **line = get_lines(argv[i] , &file_lines);
         if (line == NULL)
             continue;
-        bool ts = false;
-        if (banner)
+        // printf("\r\033[K");
+        int edef = 1, zdef = rows, ddef = 11;
+        bool z_def = true;
+        
+        if (banner && i == ps)
         {
-            if (i == optind)
-            {
-                shownbanner = true;
-                ts = true;
-                printf("::::::::::::::\n%s\n::::::::::::::\n", argv[i]);
-            }
-            space_def -= 3;
+            printf("::::::::::::::\n%s\n::::::::::::::\n", argv[i]);
+            shownbanner = true;
+            if (initial >( rows - 3)) initial = rows - 3;
         }
-        int start = 0;
-        if (i == optind)
+        int from = 0;
+        if (i == ps)
         {
-            if (x_to_xy(line, start, space_def) == 0)
+            if (x_to_xy(line, from, initial) == 0)
             {
-                if (optind + 1 < argc)
-                {
-                    printf("\033[7m--More--(Next file: %s)\033[27m", argv[optind + 1]);
-                }
+                if (banner)
+                    printf("\033[7m--More--(Next file: %s)", argv[i + 1]);
+
+                for (int i = 0; line[i] != NULL; i++)
+                    free(line[i]);
+                free(line);
                 continue;
             }
-            start += space_def - 1;
-            if (shownbanner) space_def += 3;
+            from += initial;
+            printf("\033[7m--More--(%.f%%)\033[27m", ((double)from / file_lines) * 100);
         }
-    
+        char *numbuff = (char*)malloc(1*sizeof(char));
+        bool getnum = false;
+        int numit = 0;
+        int last_from = 0, last_until = initial;
         while ((opt = getchar()) != EOF)
         {
-            ts = false;
+            if (opt == '=')
+            {
+                printf("\r\033[K%d",last_from);
+                continue;
+            }
+            if (opt == 12)
+            {
+                printf("\r\033[K");
 
+                if (x_to_xy(line, last_from, last_until) == 0)
+                {
+                    if (banner)
+                        printf("\033[7m--More--(Next file: %s)", argv[i + 1]);
+                    for (int i = 0; line[i] != NULL; i++)
+                        free(line[i]);
+                    free(line);
+                    continue;
+                }
+                printf("\033[7m--More--(%.f%%)\033[27m", ((double)last_from / file_lines) * 100);
+            }
+            if (opt == 'h')
+            {
+                printf("\r\033[K");
+
+                usage();
+                printf("\033[7m--More--(%.f%%)\033[27m", ((double)from / file_lines) * 100);
+                continue;
+            }
+            if (z_def) zdef = rows;
+            if ((opt >= '0') && (opt <= '9'))
+            {
+                if (opt == '0' && numit == 0) continue;
+                getnum = true;
+                numbuff[numit++] = opt;
+                numbuff = (char *)realloc(numbuff, sizeof(char) * (numit + 1));
+                numbuff[numit] = '\0';
+            }
+            
             if (tolower(opt) == 'q')
             {
                 printf("\r\033[K");
+                free(numbuff);
                 exit = true;
                 break;
             }
-            if (opt == ' ')
+            if (opt == ' ' || opt == '\n' || opt == 'z' || opt == 4 || opt == 'd')
             {
-
                 printf("\r\033[K");
+                int jump;
+                if (opt == ' ' || opt == 'z')
+                {
+                    jump = rows;
+                    if (num)
+                        jump = user_lines;
+                    if (getnum)
+                        jump = atoi(numbuff);
+                }
+                if (opt == 'z')
+                {
+                    if (getnum)
+                    {
+                        zdef = atoi(numbuff);
+                        z_def = false;
+                    }
+                    jump = zdef;
+                }
+                if (opt == '\n')
+                    jump = 1;
+                if (opt == 4 || opt == '4')
+                    jump = 11;
                 if (banner && !shownbanner)
                 {
                     printf("::::::::::::::\n%s\n::::::::::::::\n", argv[i]);
                     shownbanner = true;
+                    if (jump > (rows - 3))
+                        jump = rows - 3;
                 }
-                if (x_to_xy(line, start, space_def) == 0)
+                last_until = jump;
+                if (x_to_xy(line, from, jump) == 0)
                 {
-                    if (i + 1 < argc)
-                    {
-                        printf("\033[7m--More--(Next file: %s)\033[27m", argv[optind + 1]);
-                    }
+                    if (banner && (i + 1 < argc))
+                        printf("\033[7m--More--(Next file: %s)\033[27m", argv[i + 1]);
+                    getnum = false;
+                    free(numbuff);
+                    numit = 0;
                     break;
                 }
-                start += space_def - 1;
-                if (shownbanner)
-                {
-                    space_def += 3;
-                }
+                from += jump;
+                last_from = from;
+                printf("\033[7m--More--(%.f%%)\033[27m", ((double)from / file_lines) * 100);
+                getnum = false;
+                free(numbuff);
+                numbuff = (char *)malloc(1 * sizeof(char));
+                numit = 0;
             }
-            if (opt == '\n')
-            {
-                printf("\r\033[K");
-                if (banner && !shownbanner)
-                {
-                    printf("::::::::::::::\n%s\n::::::::::::::\n", argv[i]);
-                    shownbanner = true;
-                }
-                if (x_to_xy(line, start, 2) == 0)
-                {
-                    if (i + 1 < argc)
-                    {
-                        printf("\033[7m--More--(Next file: %s)\033[27m", argv[optind + 1]);
-                    }
-                    break;
-                }
-                start += 1;
-            }
-
         }
+
         for (int i = 0; line[i] != NULL; i++)
             free(line[i]);
         free(line);
@@ -187,21 +270,13 @@ int main(int argc, char **argv)
     return 0;
 }
 int x_to_xy(char **line, int x, int y)
-{   
-    int lines = 0;
-    while (line[lines++] != NULL)
-        ;
-        lines--;
-    int until = (x + y ) > lines ? lines : x + y - 1;
-    int from = x;
-    for (int i = from; i < until; i++)
+{
+  
+   while( y-- > 0 && line[x] != NULL)
     {
-        printf("%s\n", line[i]);
+        printf("%s\n", line[x++]);
     }
-    if (until == lines )
-        return 0;
-
-    printf("\033[7m--More--(%.f%%)\033[27m", (((double)(until)) / (lines)) * 100);
+    if (line[x] == NULL) return 0;
     return 1;
 }
 char *get_file(const char *path)
@@ -220,7 +295,7 @@ char *get_file(const char *path)
         perror(NULL);
         return NULL;
     }
-    char *file = (char *)malloc(sizeof(char) * (st.st_size + 1));
+    char *file = (char *)calloc((st.st_size + 1), sizeof(char));
 
     if ((read(fd, file, sizeof(char) * st.st_size)) < 0)
     {
@@ -229,42 +304,45 @@ char *get_file(const char *path)
         perror(NULL);
         return NULL;
     }
-    if (file[st.st_size - 1] != '\n')
-    {
-        file = (char *)realloc(file, sizeof(char) * ((st.st_size + 2)));
-        file[st.st_size] = '\n';
-        file[st.st_size + 1] = '\0';
-    }
     return file;
 }
 
-char **get_lines(const char *path)
+char **get_lines(const char *path, int* file_lines)
 {
-    char *file;
-    if ((file = get_file(path)) == NULL)
+    char *file =  get_file(path);
+    if (file == NULL)
         return NULL;
     int lines = 0;
-    for (size_t i = 0; i < strlen(file); i++)
+    size_t size = strlen(file);
+    for (size_t i = 0; i < size; i++)
     {
         if (file[i] == '\n')
             lines++;
     }
+    *file_lines = lines;
     char **line = (char **)malloc((lines + 1) * sizeof(char *));
     line[lines] = NULL;
 
     int it = 0;
     size_t last = 0;
-    for (size_t i = 0; i < strlen(file); i++)
+    for (size_t i = 0; i < size; i++)
     {
         // 12 \n 3 \n 3 \n
         // 01 2  3 4  5 6
-        if (file[i] == '\n')
+        if (file[i] == '\n' )
         {
-            line[it] = (char *)malloc((sizeof(char)) * (i - last + 1));
+            line[it] = (char *)calloc((i - last + 1), (sizeof(char)) );
             memcpy(line[it], file + last, (i - last) * sizeof(char));
-            line[it][i - last] = '\0';
             last = i + 1;
             it++;
+            continue;
+        }
+        if (i + 1 == size)
+        {            
+            line[it] = (char *)calloc((i - last + 2),(sizeof(char))  );
+            memcpy(line[it], file + last, (i - last + 1) * sizeof(char));
+            line = (char**) realloc(line, (lines + 2) *sizeof(char*));
+            line[lines+1] = NULL;
         }
     }
     free(file);
@@ -283,7 +361,6 @@ void signal_handler(int signal_number)
         struct winsize ws;
         ioctl(STDIN_FILENO, TIOCGWINSZ, &ws);
         rows = ws.ws_row;
-        cols = ws.ws_col;
         return;
     }
     tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
