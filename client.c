@@ -37,7 +37,7 @@ int main(int argc, char *argv[]) {
 
     connerr = connect(socket_fd, (struct sockaddr *)addr_host, sizeof (struct sockaddr));
     if (connerr < 0 ) {
-		fprintf(stderr, "myshell_server: couldn't connect to socket on port '%d': ",port);
+		fprintf(stderr, "myshell_client: couldn't connect to socket on port '%d': ",port);
         perror(NULL);
         exit(1);
 	}

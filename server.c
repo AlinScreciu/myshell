@@ -129,12 +129,27 @@ void *pthread_routine(void *arg)
         char c;
         char *output = (char *)calloc(1, sizeof(char));
         int i = 0;
-        while (fread(&c, 1, 1, fp) != 0)
+        int err;
+        while ((err = fread(&c, 1, 1, fp)) > 0)
         {
             output[i++] = c;
             output = (char *)realloc(output, (i + 1) * sizeof(char));
         }
+        if (err < 0)
+        {
+            pclose(fp);
+            free(com);
+            free(output);
+            free(line);
+            fprintf(stderr, "myshell_server: failed reading process output: ");
+            perror(NULL);
+            break;
+        }
         output[i] = '\0';
+        if (strlen(output) == 0)
+        {
+            output = strdup("Command executed!\n");
+        }
         sprintf(len_str, "%ld", strlen(output));
         printf("socket '%d': sending size of output: %s\n", new_socket_fd, len_str);
         write(new_socket_fd, len_str, strlen(len_str));
