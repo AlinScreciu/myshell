@@ -196,7 +196,7 @@ char **parse_line(const char *line, const char *delim)
         char **check = (char **)realloc(tokens, (count + 1) * sizeof(char *));
         if (check == NULL)
         {
-            fprintf(stderr, "myshell: realloc failure for token parsing: ");
+            fprintf(stderr, "myshell\n  realloc failure for token parsing\n  ");
             perror(NULL);
             exit(1);
         }
@@ -341,7 +341,7 @@ int exec_pipeline(const char *line, char **env)
         pid = fork();
         if (pid < 0)
         {
-            fprintf(stderr, "couldn't fork: ");
+            fprintf(stderr, "couldn't fork\n  ");
             perror(NULL);
             return -1;
         }
@@ -377,9 +377,18 @@ int exec_pipeline(const char *line, char **env)
 }
 int help()
 {
+
     printf(
-        "The implemented commands are:\n"
-        "1. cd\n2. hist\n3. env\n4. cwd\n5. chmod\n");
+        "The implemented commands are:\n\n"
+        "1. chmod\n\tchmod - change file mode bits\n\n"
+        "2. cp\n\tcopy files and directories ( -i, -r (-R), -t, -v )\n\n"
+        "3. diff\n\tcompare files line by line ( only works if comparing binary files or brief compare )\n\n"
+        "4. more\n\tfile perusal filter for crt viewing ( -d -s)\n\n"
+        "5. cwd\n\tdisplay current working directory\n\n"
+        "6. hist\n\tshow command history\n\n"
+        "7. cd\n\tmove to directory or home\n\n"
+        "8. help\n\tshow this help message\n\n"
+        "9. version\n\tinfo about this shell\n");
     return 0;
 }
 int hist()
@@ -390,7 +399,7 @@ int hist()
         int i = 0;
         while (hist_ent[i])
         {
-            printf("%d: %s\n", i + 1, hist_ent[i]->line);
+            printf("%d\n  %s\n", i + 1, hist_ent[i]->line);
             i++;
         }
     }
@@ -412,7 +421,7 @@ int cd(char **argv, char **env)
     }
     if (access(argv[1], F_OK) < 0)
     {
-        fprintf(stderr, "myshell: cd: %s: ", argv[1]);
+        fprintf(stderr, "myshell\n  cd\n  %s\n  ", argv[1]);
         perror(NULL);
         return -1;
     }
@@ -420,7 +429,7 @@ int cd(char **argv, char **env)
     if (chdir(argv[1]) < 0)
     {
         // env_set(env, "OLDPWD", getenv("PWD"));
-        fprintf(stderr, "myshell: couldn't move to dir '%s': ", argv[1]);
+        fprintf(stderr, "myshell\n  couldn't move to dir '%s'\n  ", argv[1]);
         perror(NULL);
         return -1;
     }
@@ -457,7 +466,7 @@ int run_command(char **argv, char **env)
     pid = fork();
     if (pid < 0)
     {
-        fprintf(stderr, "couldn't fork: ");
+        fprintf(stderr, "couldn't fork\n  ");
         perror(NULL);
         return -1;
     }
