@@ -28,14 +28,20 @@
 #define magentalen strlen(magenta)
 #define cyanlen strlen(cyan)
 #define resetlen strlen(reset)
-
 //
 int help();
 int hist();
 int get_env();
 int cd(char **, char **);
-char *built_in_commands[] = {"hist", "cd", "env", "help"};
-int (*built_in_func[])(char **, char **) = {&hist, &cd, &get_env, &help};
+int version()
+{
+    fputs("This is version \033[31m2\033[0m of \033[31mMyShell\033[0m\n", stdout);
+    fputs("Author: \033[31mScreciu Alin-Constantin\033[0m\n", stdout);
+
+    return 0;
+}
+char *built_in_commands[] = {"hist", "cd", "env", "help", "version"};
+int (*built_in_func[])(char **, char **) = {&hist, &cd, &get_env, &help, &version};
 int num_builtins = sizeof(built_in_commands) / sizeof(char *);
 char *custom_commands[] = {"chmod", "cp", "cwd", "diff", "more"};
 int num_custom = sizeof(custom_commands) / sizeof(char *);
